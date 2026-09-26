@@ -109,6 +109,9 @@ class NativeMCTSPlayer(MCTSPlayer):
         # 探索と並行してルートで回す df-pn 詰み探索のノード数 (0 で無効)。
         # 探索は GPU 待ちで CPU は余っているので、長い詰みを別スレッドで探す
         self.root_dfpn_nodes = 0
+        # 推論の実装: 'graph' (PyTorch の fp16 CUDA Graph) か 'tensorrt'
+        self.backend = 'graph'
+        self.trt = None
         self.lib = None
         self.handle = None
         self.native_tree = _TreeView()
@@ -121,10 +124,13 @@ class NativeMCTSPlayer(MCTSPlayer):
         print('option name mate_tree_ply type spin default 3 min 3 max 15')
         print('option name slots type spin default 2 min 2 max 4')
         print('option name root_dfpn_nodes type spin default 0 min 0 max 100000000')
+        print('option name backend type combo default graph var graph var tensorrt')
 
     def setoption(self, args):
         if args[1] == 'fast_inference':
             self.fast_inference = args[3] == 'true'
+        elif args[1] == 'backend':
+            self.backend = args[3]
         elif args[1] == 'root_dfpn_nodes':
             self.root_dfpn_nodes = int(args[3])
         elif args[1] == 'slots':
@@ -143,12 +149,22 @@ class NativeMCTSPlayer(MCTSPlayer):
         if self.handle is not None:
             self.lib.uct_free(self.handle)
         self.graphs = None
+        self.trt = None
         if self.fast_inference and self.device.type == 'cuda':
             # 2 スロット: GPU が片方を評価している間に、探索がもう片方を集める
             nslots = self.slots
             self.features = torch.empty((nslots * self.batch_size,) + tuple(self.features.shape[1:]),
                                         dtype=torch.float32, pin_memory=True)
-            self._capture_graphs(nslots)
+            if self.backend == 'tensorrt':
+                from pydlshogi2.player.trt_inference import TrtEvaluator
+                self.trt = TrtEvaluator(self.modelfile, self.batch_size, nslots, self.features,
+                                        self.device, log=lambda m: print('info string ' + m, flush=True))
+                self.policy_out = self.trt.policy_out
+                self.value_out = self.trt.value_out
+                # パイプラインを使う印 (launch/wait は TensorRT に回す)
+                self.graphs = []
+            else:
+                self._capture_graphs(nslots)
         else:
             nslots = 1
             self.policy_out = np.zeros((self.batch_size, MOVE_LABELS_NUM), dtype=np.float32)
@@ -223,6 +239,8 @@ class NativeMCTSPlayer(MCTSPlayer):
         self.events = [torch.cuda.Event() for _ in range(nslots)]
 
     def _launch(self, slot, n):
+        if self.trt is not None:
+            return self.trt.launch(slot, n)
         B = self.batch_size
         graph, x, policy, value = self.graphs[slot]
         with torch.cuda.stream(self.stream):
@@ -235,6 +253,8 @@ class NativeMCTSPlayer(MCTSPlayer):
         return 0
 
     def _wait(self, slot):
+        if self.trt is not None:
+            return self.trt.wait(slot)
         self.events[slot].synchronize()
         return 0
 
