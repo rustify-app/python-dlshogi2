@@ -36,7 +36,9 @@ ITERATION="${ITERATION:-}"
 
 # 各ワーカーが受け持つ局数 (端数は切り上げ)
 PER=$(( (GAMES + WORKERS - 1) / WORKERS ))
-TMPDIR="$(mktemp -d)"
+# ワーカーの出力は出力ファイルの隣 (ディスク) に置く。/tmp は tmpfs (RAM) で、
+# 他の作業に埋められて書き込みに失敗し、自己対局が丸ごと落ちたことがある
+TMPDIR="$(mktemp -d "$(dirname "$OUT")/.selfplay-parts.XXXXXX")"
 trap 'rm -rf "$TMPDIR"' EXIT
 
 echo "spawning $WORKERS workers x $PER games (playouts=$PLAYOUTS batchsize=$BATCHSIZE gpu=$GPU)"
