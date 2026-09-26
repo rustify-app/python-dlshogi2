@@ -57,6 +57,16 @@ RL_RUN_ID="${RL_RUN_ID:-rl-$(date +%Y%m%d-%H%M%S)}"
     --set val_lambda="$VAL_LAMBDA" --set workdir="$WORKDIR" > /dev/null
 
 for i in $(seq 1 "$ITERATIONS"); do
+    # 一時停止: $WORKDIR/PAUSE があるあいだ、イテレーションの境目で待つ。
+    # 待っているあいだはプロセスを何も持たないので、GPU もメモリも空く
+    # (固定時間の対局はこのあいだに回す)。待ち始めたら $WORKDIR/PAUSED を作る
+    if [ -e "$WORKDIR/PAUSE" ]; then
+        echo "paused before iteration $i ($(date '+%F %T'))"
+        touch "$WORKDIR/PAUSED"
+        while [ -e "$WORKDIR/PAUSE" ]; do sleep 10; done
+        rm -f "$WORKDIR/PAUSED"
+        echo "resumed ($(date '+%F %T'))"
+    fi
     echo "=== RL iteration $i / $ITERATIONS (model: $CURRENT) ==="
     DATA="$WORKDIR/selfplay-$(printf '%03d' "$i").hcpe"
     NEXT="$WORKDIR/checkpoint-$(printf '%03d' "$i").pth"
