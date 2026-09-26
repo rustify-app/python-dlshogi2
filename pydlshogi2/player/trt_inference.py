@@ -101,6 +101,18 @@ def build_engine(modelfile, batch_size, path, log=print):
     with open(path + '.tmp', 'wb') as f:
         f.write(serialized)
     os.replace(path + '.tmp', path)
+    _prune_cache(keep=8)
+
+
+def _prune_cache(keep):
+    """Keep only the ``keep`` most recently used engines (RL builds one per checkpoint)."""
+    engines = [os.path.join(CACHE_DIR, f) for f in os.listdir(CACHE_DIR) if f.endswith('.engine')]
+    engines.sort(key=os.path.getmtime, reverse=True)
+    for stale in engines[keep:]:
+        try:
+            os.remove(stale)
+        except OSError:
+            pass
 
 
 class TrtEvaluator:
@@ -118,6 +130,8 @@ class TrtEvaluator:
         path = engine_path(modelfile, batch_size)
         if not os.path.exists(path):
             build_engine(modelfile, batch_size, path, log)
+        else:
+            os.utime(path)  # 使ったものほど消されにくくする
         self.logger = trt.Logger(trt.Logger.WARNING)
         self.runtime = trt.Runtime(self.logger)
         with open(path, 'rb') as f:
