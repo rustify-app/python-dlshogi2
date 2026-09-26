@@ -326,6 +326,8 @@ def main():
     parser.add_argument('--native', action='store_true',
                         help='search with the native C++ core (pydlshogi2/uct/native; build it '
                              'first) — several times the playouts per second')
+    parser.add_argument('--backend', choices=['graph', 'tensorrt'], default='graph',
+                        help='inference backend of the native search (with --native)')
     parser.add_argument('--gpu', type=int, default=0, help='GPU id (-1 for CPU)')
     parser.add_argument('--batchsize', type=int, default=32, help='inference batch size')
     parser.add_argument('--seed', type=int, default=None,
@@ -349,6 +351,8 @@ def main():
 
     engine_class = NativeSelfPlayEngine if args.native else SelfPlayEngine
     engine = engine_class(dirichlet_alpha=args.dirichlet_alpha, noise_eps=args.noise_eps)
+    if args.native:
+        engine.backend = args.backend
     engine.modelfile = args.modelfile
     engine.gpu_id = args.gpu
     engine.batch_size = args.batchsize
