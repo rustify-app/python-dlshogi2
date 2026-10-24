@@ -11,8 +11,7 @@ The game loop, the USI protocol and the rule handling come from
 part that makes a match an *experiment*:
 
 * **Structured results.** Every game appends a record to a JSONL metrics file,
-  tagged with the experiment id and issue number it belongs to, so the
-  dashboard can line a match up against the proposal that motivated it.
+  tagged with optional experiment and issue identifiers.
 * **A stopping rule.** ``--sprt`` runs a sequential probability ratio test after
   every game and stops as soon as the result is conclusive in either direction.
   A regression is usually obvious within 30 games; paying for 100 to find that
@@ -21,7 +20,7 @@ part that makes a match an *experiment*:
   interval, not just a win rate. See :mod:`pydlshogi2.rating`.
 
 Both engines must be launchable as a single executable path — use the
-``usi_engine.sh`` in each checkout.
+``scripts/usi_engine.sh`` in each checkout.
 
 Example
 -------
@@ -30,8 +29,8 @@ Example
 
     # a branch against main, one second per move, stopping early once decided
     python -m pydlshogi2.match \\
-        --engine1 ../wt-branch/usi_engine.sh --name1 branch \\
-        --engine2 ./usi_engine.sh            --name2 main \\
+        --engine1 ../wt-branch/scripts/usi_engine.sh --name1 branch \\
+        --engine2 ./scripts/usi_engine.sh            --name2 main \\
         --options1 modelfile=checkpoints/checkpoint.pth \\
         --options2 modelfile=checkpoints/checkpoint.pth \\
         --games 100 --byoyomi 1000 --opening openings.txt \\
@@ -127,7 +126,10 @@ def default_name(engine_path, options):
     :param options: parsed USI options for that engine.
     :returns: a short name.
     """
-    checkout = os.path.basename(os.path.dirname(os.path.abspath(engine_path)))
+    engine_dir = os.path.dirname(os.path.abspath(engine_path))
+    if os.path.basename(engine_dir) == 'scripts':
+        engine_dir = os.path.dirname(engine_dir)
+    checkout = os.path.basename(engine_dir)
     modelfile = options.get('modelfile')
     if not modelfile:
         return checkout
@@ -334,7 +336,7 @@ def build_parser():
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--engine1', required=True,
                         help='launcher of the engine under test (e.g. a branch '
-                             'checkout\'s usi_engine.sh)')
+                             'checkout\'s scripts/usi_engine.sh)')
     parser.add_argument('--engine2', required=True,
                         help='launcher of the baseline engine')
     parser.add_argument('--name1', default=None,
@@ -401,12 +403,9 @@ def build_parser():
 
     record_group = parser.add_argument_group('recording')
     record_group.add_argument('--metrics', default=None,
-                              help='JSONL file to append the match to; read by '
-                                   'dashboard/app.py')
+                              help='JSONL file for match records')
     record_group.add_argument('--experiment', default=None,
-                              help='experiment id from wiki/Improvement-Backlog.md '
-                                   '(e.g. EXP-001), used to join the match to the '
-                                   'proposal it tests')
+                              help='optional experiment identifier stored in metrics')
     record_group.add_argument('--issue', type=int, default=None,
                               help='GitHub issue number tracking this experiment')
     record_group.add_argument('--note', default=None,

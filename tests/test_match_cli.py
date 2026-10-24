@@ -44,12 +44,12 @@ class ParseOptionsTest(unittest.TestCase):
 
 class DefaultNameTest(unittest.TestCase):
     def test_uses_the_checkout_directory(self):
-        self.assertEqual(match.default_name('/x/wt-main/usi_engine.sh', {}),
+        self.assertEqual(match.default_name('/x/wt-main/scripts/usi_engine.sh', {}),
                          'wt-main')
 
     def test_appends_the_model(self):
         self.assertEqual(
-            match.default_name('/x/branch/usi_engine.sh',
+            match.default_name('/x/branch/scripts/usi_engine.sh',
                                {'modelfile': 'checkpoints/checkpoint-003.pth'}),
             'branch:checkpoint-003')
 

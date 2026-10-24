@@ -5,9 +5,8 @@ body:
   - type: markdown
     attributes:
       value: |
-        One issue per experiment. When it finishes, copy the conclusion into the
-        wiki's [Experiment Log](https://github.com/LoveKapibarasan/python-dlshogi2/wiki/Experiment-Log)
-        and close this.
+        Use one issue per experiment. Keep the question, command and conclusion
+        in this issue; attach the JSONL metrics file when available.
 
   - type: textarea
     id: question
@@ -22,7 +21,7 @@ body:
     id: command
     attributes:
       label: Command
-      description: Include `--metrics` so the run lands in the dashboard.
+      description: Include `--metrics` to save a JSONL record of the run.
       render: shell
       placeholder: |
         python -m pydlshogi2.train train.hcpe test.hcpe --gpu 0 --epoch 10 \

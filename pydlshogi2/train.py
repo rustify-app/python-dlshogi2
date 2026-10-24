@@ -1,5 +1,6 @@
 ﻿import argparse
 import logging
+import os
 import signal
 import sys
 import torch
@@ -32,7 +33,7 @@ parser.add_argument('--log', default=None, help='log file path')
 parser.add_argument('--metrics', default=None,
                     help='JSON Lines file to append structured metrics to '
                          '(loss/accuracy per eval interval, run metadata); '
-                         'read by dashboard/app.py')
+                         'used for structured JSONL run records')
 parser.add_argument('--run_id', default=None,
                     help='reuse this run id in the metrics file instead of '
                          'generating a new one (use it to keep a preempted '
@@ -152,6 +153,7 @@ def binary_accuracy(y, t):
 def save_checkpoint():
     path = args.checkpoint.format(**{'epoch':epoch, 'step':t})
     logging.info('Saving the checkpoint to {}'.format(path))
+    os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
     checkpoint = {
         'epoch': epoch,
         't': t,

@@ -54,9 +54,9 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: OS, Python, torch, GPU, and how it was launched (local / Colab / Vast.ai).
+      description: OS, Python, torch, GPU, and how it was launched (local / GPU server).
       placeholder: |
-        Ubuntu 24.04, Python 3.12, torch 2.6.0+cu124, RTX 4090, Vast.ai via ./vast_run.sh
+        Ubuntu 24.04, Python 3.12, torch 2.6.0+cu124, RTX 4090, GPU server via scripts/vast_run.sh
     validations:
       required: true
 

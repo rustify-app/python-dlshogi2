@@ -1,61 +1,20 @@
-# python-dlshogi2 Wiki
+# 将棋 AI の手引き
 
-Deep-learning shogi engine: a policy-value ResNet trained on game records,
-improved by self-play, and played through Monte Carlo Tree Search over the USI
-protocol.
+将棋 AI の設計と運用を素早く確認するための要点集です。導入手順と詳細な引数は README および各コマンドのヘルプを参照してください。
 
-## Where things are documented
+## ページ
 
-This project keeps three kinds of documentation, and they deliberately do not
-overlap. When adding something, pick by **who is reading it and why**:
+- ネットワーク構成
+- 探索
+- 学習手順
+- 強化学習
+- 計測記録
+- 実行環境
+- 将棋エンジン
+- 対局評価
+- 改善案
+- 障害対応
 
-| Place | Answers | Written in |
-|-------|---------|------------|
-| [README](https://github.com/LoveKapibarasan/python-dlshogi2/blob/main/README.md) | "How do I install this and run it?" — the shortest path from clone to a playing engine | `README.md`, kept short |
-| [API reference](https://github.com/LoveKapibarasan/python-dlshogi2/tree/main/docs) (Sphinx) | "What does this function take and return?" — generated from in-source docstrings | docstrings + `docs/*.rst` |
-| **This wiki** | "Why is it built this way, and how do I actually operate it?" — design background, environment-specific procedures, experiment records | `wiki/*.md` in the repo, synced to the wiki |
+## 構成の概要
 
-Rule of thumb: if it would go stale the moment the code changes, it belongs in a
-docstring. If it explains a decision, a trade-off or a procedure, it belongs
-here.
-
-## Pages
-
-**Design**
-
-- [Architecture](Architecture) — input features, move labels, the ResNet and its heads
-- [MCTS](MCTS) — PUCT, virtual loss, FPU, mate search, tree reuse, time management
-
-**Operating the pipeline**
-
-- [Training Pipeline](Training-Pipeline) — CSA → HCPE, the value target, preemption-safe training
-- [Reinforcement Learning](Reinforcement-Learning) — what one `rl_loop.sh` iteration actually does
-- [Metrics and Dashboard](Metrics-and-Dashboard) — the JSONL run history and the Streamlit dashboard
-- [Environments](Environments) — Colab, Vast.ai and local GPU setup
-- [USI Engine](USI-Engine) — registering the engine in a shogi GUI, PyTorch vs ONNX
-
-**Deciding what to change**
-
-- [Improvement Backlog](Improvement-Backlog) — proposals for making the engine stronger, ranked by value over cost
-- [Evaluation and Rating](Evaluation-and-Rating) — how a change is proved: matches, Elo, SPRT, and what 100 games can and cannot tell you
-
-**Records**
-
-- [Experiment Log](Experiment-Log) — what was trained, with what settings, and what came out
-- [Troubleshooting](Troubleshooting) — known pitfalls and their fixes
-
-## Editing this wiki
-
-The pages live in the main repository under `wiki/` and are pushed to the GitHub
-wiki by `wiki/publish.sh`. Edit them there, in a normal pull request, so wiki
-changes are reviewed alongside the code they describe. See
-[wiki/README.md](https://github.com/LoveKapibarasan/python-dlshogi2/blob/main/wiki/README.md).
-
-A GitHub wiki is itself a git repository, so it can also be cloned directly:
-
-```bash
-git clone git@github.com:LoveKapibarasan/python-dlshogi2.wiki.git
-```
-
-Edits made that way (or in the browser) will be **overwritten** by the next
-`publish.sh` run, so treat `wiki/` in the main repo as the source of truth.
+棋譜から教師あり学習し、学習済みモデルを探索付き将棋エンジンで使用します。自己対局を使った強化学習にも対応します。学習・自己対局・対局の結果は JSONL に記録できます。

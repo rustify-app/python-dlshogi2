@@ -246,10 +246,10 @@ def main():
                         help='random seed (set a distinct value per parallel worker)')
     parser.add_argument('--metrics', default=None,
                         help='JSON Lines file to append per-game statistics and '
-                             'run metadata to; read by dashboard/app.py')
+                             'run metadata to a JSONL file')
     parser.add_argument('--iteration', type=int, default=None,
                         help='RL loop iteration this run belongs to (recorded in '
-                             'the metrics file so the dashboard can group workers)')
+                             'the metrics file so worker runs can be grouped)')
     args = parser.parse_args()
 
     # 並列ワーカーが同一局を量産しないようシードを設定する

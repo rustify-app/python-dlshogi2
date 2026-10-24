@@ -3,8 +3,7 @@
 The training loop and the self-play generator both emit human-readable text
 logs, which are convenient to tail but painful to compare across runs.  This
 module writes the same information a second time as **JSON Lines** so that the
-dashboard (``dashboard/app.py``) — or any ad-hoc script — can load a whole
-experiment history with a one-line parser.
+analysis script can load a whole run history with a one-line parser.
 
 Every run appends to its own ``.jsonl`` file.  The first record describes the
 run, the rest are metric samples and events:
@@ -36,8 +35,7 @@ import subprocess
 import time
 import uuid
 
-#: Version of the record schema, stored on the ``run`` record so the dashboard
-#: can stay backwards compatible when fields are added later.
+#: Version of the record schema, stored on the ``run`` record for readers.
 SCHEMA_VERSION = 1
 
 
@@ -74,8 +72,7 @@ def git_revision(cwd=None):
 def gpu_name(gpu_id=0):
     """Return the CUDA device name for ``gpu_id``, or ``None`` on CPU.
 
-    Importing torch lazily keeps this module usable from the dashboard, which
-    has no reason to pull in a deep learning framework.
+    Importing torch lazily keeps this module independent of the training stack.
     """
     if gpu_id is None or gpu_id < 0:
         return None
@@ -201,7 +198,7 @@ class MetricsWriter:
 def append_record(path, record):
     """Append a single already-built record to a JSONL file.
 
-    Used by shell drivers (``rl_loop.sh``) that want to log one event without
+    Used by shell drivers (``scripts/rl_loop.sh``) that want to log one event without
     opening a long-lived :class:`MetricsWriter`.
 
     :param path: target ``.jsonl`` file; parent directories are created.

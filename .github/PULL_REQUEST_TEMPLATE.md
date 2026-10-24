@@ -10,7 +10,7 @@
 
 <!-- Delete the lines that do not apply. -->
 
-- [ ] Docstrings updated (these generate the Sphinx API reference)
+- [ ] Relevant docstrings updated
 - [ ] README updated — only if the install/run path changed
 - [ ] `wiki/` updated — design background, operating procedure or experiment record
 - [ ] No documentation needed

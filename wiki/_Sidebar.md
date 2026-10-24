@@ -1,22 +1,13 @@
 ### python-dlshogi2
 
-**[Home](Home)**
-
-**Design**
-- [Architecture](Architecture)
-- [MCTS](MCTS)
-
-**Pipeline**
-- [Training Pipeline](Training-Pipeline)
-- [Reinforcement Learning](Reinforcement-Learning)
-- [Metrics and Dashboard](Metrics-and-Dashboard)
-- [Environments](Environments)
-- [USI Engine](USI-Engine)
-
-**Evaluation**
-- [Evaluation and Rating](Evaluation-and-Rating)
-- [Improvement Backlog](Improvement-Backlog)
-
-**Records**
-- [Experiment Log](Experiment-Log)
-- [Troubleshooting](Troubleshooting)
+- トップページ
+- ネットワーク構成
+- 探索
+- 学習手順
+- 強化学習
+- 計測記録
+- 実行環境
+- 将棋エンジン
+- 対局評価
+- 改善案
+- 障害対応

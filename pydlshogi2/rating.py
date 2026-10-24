@@ -6,8 +6,8 @@ counts into the numbers that *do* answer the question — an Elo difference with
 a confidence interval, a likelihood of superiority, and a sequential test that
 says "accept", "reject" or "keep playing".
 
-It is deliberately **standard library only**, so the dashboard, the tests and
-throwaway scripts can import it without torch or cshogi.  :mod:`pydlshogi2.match`
+It is deliberately **standard library only**, so the tests and analysis
+scripts can import it without torch or cshogi.  :mod:`pydlshogi2.match`
 plays the games; everything here only counts them.
 
 Two levels are provided:

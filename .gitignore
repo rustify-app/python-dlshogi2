@@ -72,9 +72,6 @@ instance/
 # Scrapy stuff:
 .scrapy
 
-# Sphinx documentation
-docs/_build/
-
 # PyBuilder
 .pybuilder/
 target/
@@ -222,8 +219,13 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# runtime job logs (vast_run.sh)
+# runtime job logs (scripts/vast_run.sh)
 logs/
 
-# structured run metrics (dashboard/app.py reads these; runs are not artifacts)
+# structured run metrics
 metrics/
+
+# Local Claude settings
+.claude/
+
+checkpoints/
