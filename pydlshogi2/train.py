@@ -8,6 +8,7 @@ import torch.optim as optim
 
 from pydlshogi2.network.policy_value_resnet import build_network, LEGACY_NETWORK_CONFIG
 from pydlshogi2.dataloader import HcpeDataLoader
+from pydlshogi2.losses import policy_cross_entropy
 from pydlshogi2.metrics import MetricsWriter, gpu_name
 
 parser = argparse.ArgumentParser(description='Train policy value network')
@@ -23,6 +24,10 @@ parser.add_argument('--val_lambda', type=float, default=0.333,
                          '(1.0 = outcome only, <1.0 blends in the search eval)')
 parser.add_argument('--eval_coef', type=float, default=600.0,
                     help='sigmoid temperature mapping eval (cp) to a win rate')
+parser.add_argument('--teacher_targets', default=None,
+                    help='optional sparse MultiPV targets (.npz) for policy training')
+parser.add_argument('--teacher_targets_test', default=None,
+                    help='optional sparse MultiPV targets (.npz) for policy validation')
 parser.add_argument('--checkpoint', default='checkpoints/checkpoint-{epoch:03}.pth', help='checkpoint file name')
 parser.add_argument('--resume', '-r', default='', help='Resume from snapshot')
 parser.add_argument('--eval_interval', type=int, default=100, help='evaluation interval')
@@ -95,7 +100,6 @@ model.to(device)
 optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=0.0001)
 
 # 損失関数
-cross_entropy_loss = torch.nn.CrossEntropyLoss()
 bce_with_logits_loss = torch.nn.BCEWithLogitsLoss()
 
 # チェックポイント読み込み
@@ -124,11 +128,13 @@ amp_dtype = torch.bfloat16
 # 訓練データ読み込み
 logging.info('Reading training data')
 train_dataloader = HcpeDataLoader(args.train_data, args.batchsize, device, shuffle=True,
-                                  val_lambda=args.val_lambda, eval_coef=args.eval_coef)
+                                  val_lambda=args.val_lambda, eval_coef=args.eval_coef,
+                                  teacher_targets=args.teacher_targets)
 # テストデータ読み込み
 logging.info('Reading test data')
 test_dataloader = HcpeDataLoader(args.test_data, args.testbatchsize, device,
-                                 val_lambda=args.val_lambda, eval_coef=args.eval_coef)
+                                 val_lambda=args.val_lambda, eval_coef=args.eval_coef,
+                                 teacher_targets=args.teacher_targets_test)
 
 # 読み込んだデータ数を表示
 logging.info('train position num = {}'.format(len(train_dataloader)))
@@ -136,6 +142,8 @@ logging.info('test position num = {}'.format(len(test_dataloader)))
 metrics.event('data_loaded',
               train_positions=len(train_dataloader),
               test_positions=len(test_dataloader),
+              teacher_positions=len(train_dataloader.teacher_targets or {}),
+              teacher_test_positions=len(test_dataloader.teacher_targets or {}),
               network=network_config,
               start_epoch=epoch, start_step=t)
 
@@ -174,14 +182,20 @@ for e in range(args.epoch):
     steps_epoch = 0
     sum_loss_policy_epoch = 0
     sum_loss_value_epoch = 0
-    for x, move_label, result in train_dataloader:
+    for batch in train_dataloader:
+        x, move_label, result = batch[:3]
+        if len(batch) == 5:
+            teacher_labels, teacher_probabilities = batch[3:]
+        else:
+            teacher_labels = teacher_probabilities = None
         model.train()
 
         # 順伝播
         with torch.autocast(device_type='cuda', dtype=amp_dtype, enabled=amp_enabled):
             y1, y2 = model(x)
             # 損失計算
-            loss_policy = cross_entropy_loss(y1, move_label)
+            loss_policy = policy_cross_entropy(
+                y1, move_label, teacher_labels, teacher_probabilities)
             loss_value = bce_with_logits_loss(y2, result)
             loss = loss_policy + loss_value
         # 誤差逆伝播
@@ -212,12 +226,14 @@ for e in range(args.epoch):
         if t % args.eval_interval == 0:
             model.eval()
 
-            x, move_label, result = test_dataloader.sample()
+            test_batch = test_dataloader.sample()
+            x, move_label, result = test_batch[:3]
             with torch.no_grad(), torch.autocast(device_type='cuda', dtype=amp_dtype, enabled=amp_enabled):
                 # 推論
                 y1, y2 = model(x)
                 # 損失計算
-                test_loss_policy = cross_entropy_loss(y1, move_label).item()
+                test_loss_policy = policy_cross_entropy(
+                    y1, move_label, *test_batch[3:5]).item()
                 test_loss_value = bce_with_logits_loss(y2, result).item()
                 # 正解率計算
                 test_accuracy_policy = accuracy(y1, move_label)
@@ -275,11 +291,13 @@ for e in range(args.epoch):
     sum_test_accuracy_value = 0
     model.eval()
     with torch.no_grad(), torch.autocast(device_type='cuda', dtype=amp_dtype, enabled=amp_enabled):
-        for x, move_label, result in test_dataloader:
+        for test_batch in test_dataloader:
+            x, move_label, result = test_batch[:3]
             y1, y2 = model(x)
 
             test_steps += 1
-            sum_test_loss_policy += cross_entropy_loss(y1, move_label).item()
+            sum_test_loss_policy += policy_cross_entropy(
+                y1, move_label, *test_batch[3:5]).item()
             sum_test_loss_value += bce_with_logits_loss(y2, result).item()
             sum_test_accuracy_policy += accuracy(y1, move_label)
             sum_test_accuracy_value += binary_accuracy(y2, result)
