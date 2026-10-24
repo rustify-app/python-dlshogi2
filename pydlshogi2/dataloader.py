@@ -26,7 +26,12 @@ class HcpeDataLoader:
 
     def __init__(self, files, batch_size, device, shuffle=False,
                  val_lambda=1.0, eval_coef=DEFAULT_EVAL_COEF,
-                 teacher_targets=None):
+                 teacher_targets=None, deduplicate_positions=False,
+                 recency_decay=1.0):
+        if not 0 < recency_decay <= 1:
+            raise ValueError('recency_decay must be greater than 0 and at most 1')
+        self.deduplicate_positions = deduplicate_positions
+        self.recency_decay = recency_decay
         self.load(files)
         self.batch_size = batch_size
         self.device = device
@@ -62,15 +67,38 @@ class HcpeDataLoader:
 
     def load(self, files):
         data = []
+        source_indices = []
         if type(files) not in [list, tuple]:
             files = [files]
+        source_index = 0
         for path in files:
             if os.path.exists(path):
                 logging.info(path)
-                data.append(np.fromfile(path, dtype=HuffmanCodedPosAndEval))
+                chunk = np.fromfile(path, dtype=HuffmanCodedPosAndEval)
+                data.append(chunk)
+                source_indices.append(np.full(len(chunk), source_index, dtype=np.int32))
+                source_index += 1
             else:
                 logging.warn('{} not found, skipping'.format(path))
         self.data = np.concatenate(data)
+        self.source_indices = np.concatenate(source_indices)
+        self.duplicate_positions_removed = 0
+        if self.deduplicate_positions:
+            hcp_view = self.data['hcp'].reshape(len(self.data), -1)
+            # Traverse backwards so the newest file supplies the surviving record.
+            _, reverse_first = np.unique(hcp_view[::-1], axis=0, return_index=True)
+            keep = np.sort(len(self.data) - 1 - reverse_first)
+            self.duplicate_positions_removed = len(self.data) - len(keep)
+            self.data = self.data[keep]
+            self.source_indices = self.source_indices[keep]
+
+        if (self.recency_decay == 1.0 or not len(self.source_indices)
+                or self.source_indices.min() == self.source_indices.max()):
+            self.sampling_probabilities = None
+        else:
+            age = self.source_indices.max() - self.source_indices
+            weights = np.power(self.recency_decay, age).astype(np.float64)
+            self.sampling_probabilities = weights / weights.sum()
 
     @staticmethod
     def _load_teacher_targets(path):
@@ -142,10 +170,13 @@ class HcpeDataLoader:
         return batch
 
     def sample(self):
-        return self.mini_batch(np.random.choice(self.data, self.batch_size, replace=False))
+        indices = np.random.choice(
+            len(self.data), self.batch_size, replace=False,
+            p=self.sampling_probabilities)
+        return self.mini_batch(self.data[indices])
 
     def pre_fetch(self):
-        hcpevec = self.data[self.i:self.i+self.batch_size]
+        hcpevec = self.epoch_data[self.i:self.i+self.batch_size]
         self.i += self.batch_size
         if len(hcpevec) < self.batch_size:
             return
@@ -157,8 +188,15 @@ class HcpeDataLoader:
 
     def __iter__(self):
         self.i = 0
-        if self.shuffle:
-            np.random.shuffle(self.data)
+        if self.sampling_probabilities is not None:
+            indices = np.random.choice(
+                len(self.data), len(self.data), replace=True,
+                p=self.sampling_probabilities)
+            self.epoch_data = self.data[indices]
+        else:
+            self.epoch_data = self.data.copy()
+            if self.shuffle:
+                np.random.shuffle(self.epoch_data)
         self.pre_fetch()
         return self
 
