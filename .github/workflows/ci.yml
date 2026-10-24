@@ -34,11 +34,11 @@ jobs:
 
       # torch/cshogi無しではimportできないため、構文チェックに留める
       - name: Byte-compile every module
-        run: python -m compileall -q pydlshogi2 utils human tests
+        run: python -m compileall -q pydlshogi2 utils tests
 
       - name: Check shell scripts
         run: |
-          for script in scripts/*.sh wiki/*.sh human/*.sh; do
+          for script in scripts/*.sh wiki/*.sh; do
               echo "checking $script"
               bash -n "$script"
           done

@@ -33,5 +33,5 @@ body:
         - label: Self-play / RL loop
         - label: Player / USI
         - label: Data tooling
-        - label: Dashboard / metrics
+        - label: Metrics
         - label: Docs / wiki
