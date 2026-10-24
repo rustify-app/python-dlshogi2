@@ -42,6 +42,9 @@ DEFAULT_BYOYOMI_MARGIN = 100
 DEFAULT_PV_INTERVAL = 500
 # デフォルトプレイアウト数
 DEFAULT_CONST_PLAYOUT = 1000
+# Adaptive time allocation limits. The multiplier is based on normalized root
+# policy entropy, so a diffuse root prior receives more time than a confident one.
+DEFAULT_ADAPTIVE_TIME = False
 # デフォルトのルート詰み探索手数(奇数, 探索開始時に1回だけ実行)
 DEFAULT_MATE_ROOT_PLY = 7
 # 勝ちを表す定数（数値に意味はない）
@@ -71,6 +74,21 @@ def softmax_temperature_with_normalize(logits, temperature):
     probabilities /= sum_probabilities
 
     return probabilities
+
+
+def uncertainty_time_factor(policy):
+    """Map normalized root-policy entropy to a bounded time multiplier."""
+    if policy is None or len(policy) < 2:
+        return 1.0
+    probabilities = np.asarray(policy, dtype=np.float64)
+    if (not np.all(np.isfinite(probabilities)) or np.any(probabilities < 0)
+            or probabilities.sum() <= 0):
+        return 1.0
+    probabilities /= probabilities.sum()
+    positive = probabilities[probabilities > 0]
+    entropy = -np.sum(positive * np.log(positive)) / math.log(len(probabilities))
+    # Center on 1.0 at entropy 0.5; keep changes modest (±25%).
+    return 0.75 + 0.5 * float(np.clip(entropy, 0.0, 1.0))
 
 # ノード更新
 def update_result(current_node, next_index, result):
@@ -143,6 +161,7 @@ class MCTSPlayer(BasePlayer):
         self.mate_root_ply = DEFAULT_MATE_ROOT_PLY
         # 時間指定なしの go で使う固定プレイアウト数
         self.const_playout = DEFAULT_CONST_PLAYOUT
+        self.adaptive_time = DEFAULT_ADAPTIVE_TIME
 
         self.debug = False
 
@@ -162,6 +181,7 @@ class MCTSPlayer(BasePlayer):
         print('option name pv_interval type spin default ' + str(DEFAULT_PV_INTERVAL) + ' min 0 max 10000')
         print('option name mate_root_ply type spin default ' + str(DEFAULT_MATE_ROOT_PLY) + ' min 1 max 31')
         print('option name playouts type spin default ' + str(DEFAULT_CONST_PLAYOUT) + ' min 1 max 10000000')
+        print('option name adaptive_time type check default false')
         print('option name debug type check default false')
 
     def setoption(self, args):
@@ -191,6 +211,8 @@ class MCTSPlayer(BasePlayer):
             self.mate_root_ply = int(args[3])
         elif args[1] == 'playouts':
             self.const_playout = int(args[3])
+        elif args[1] == 'adaptive_time':
+            self.adaptive_time = args[3] == 'true'
         elif args[1] == 'debug':
             self.debug = args[3] == 'true'
 
@@ -267,6 +289,8 @@ class MCTSPlayer(BasePlayer):
                 self.remaining_time = int(self.remaining_time) if self.remaining_time else 0
                 inc = int(inc) if inc else 0
                 self.time_limit = self.remaining_time / (14 + max(0, 30 - self.root_board.move_number)) + inc
+                if self.adaptive_time:
+                    self.time_limit *= uncertainty_time_factor(self.tree.current_head.policy)
                 # 秒読みの場合
                 if byoyomi:
                     byoyomi = int(byoyomi) - self.byoyomi_margin
@@ -626,6 +650,11 @@ class MCTSPlayer(BasePlayer):
 
         # 消費時間
         spend_time = int((time.time() - self.begin_time) * 1000)
+
+        # Millisecond rounding can leave an early check at zero on short clocks.
+        # Wait for another search batch instead of dividing by zero below.
+        if spend_time <= 0:
+            return False
 
         # 消費時間が短すぎる場合、もしくは秒読みの場合は打ち切らない
         if spend_time * 10 < self.time_limit or spend_time < self.minimum_time:
