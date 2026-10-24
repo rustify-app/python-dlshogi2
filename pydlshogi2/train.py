@@ -1,5 +1,6 @@
 ﻿import argparse
 import logging
+import math
 import os
 import signal
 import sys
@@ -19,6 +20,12 @@ parser.add_argument('--epoch', '-e', type=int, default=1, help='Number of epoch 
 parser.add_argument('--batchsize', '-b', type=int, default=1024, help='Number of positions in each mini-batch')
 parser.add_argument('--testbatchsize', type=int, default=1024, help='Number of positions in each test mini-batch')
 parser.add_argument('--lr', type=float, default=0.01, help='learning rate')
+parser.add_argument('--lr_schedule', choices=['constant', 'cosine'], default='constant',
+                    help='cosine decays the learning rate to --lr_min over this run')
+parser.add_argument('--lr_min', type=float, default=0.0001,
+                    help='final learning rate of the cosine schedule')
+parser.add_argument('--warmup_steps', type=int, default=0,
+                    help='linear warm-up steps at the start of this run')
 parser.add_argument('--val_lambda', type=float, default=0.333,
                     help='weight on the game outcome for the value target '
                          '(1.0 = outcome only, <1.0 blends in the search eval)')
@@ -187,6 +194,22 @@ def save_checkpoint():
     metrics.event('checkpoint', path=path, epoch=epoch, step=t)
 
 
+# 学習率スケジュール (この実行の開始ステップから数える)
+run_start_step = t
+run_total_steps = max(1, args.epoch * (len(train_dataloader) // args.batchsize))
+
+
+def scheduled_lr(step):
+    """Learning rate for the given total step under the selected schedule."""
+    done = step - run_start_step
+    if args.warmup_steps > 0 and done < args.warmup_steps:
+        return args.lr * (done + 1) / args.warmup_steps
+    if args.lr_schedule == 'constant':
+        return args.lr
+    progress = min(1.0, done / run_total_steps)
+    return args.lr_min + 0.5 * (args.lr - args.lr_min) * (1 + math.cos(math.pi * progress))
+
+
 # 訓練ループ
 for e in range(args.epoch):
     epoch += 1
@@ -203,6 +226,7 @@ for e in range(args.epoch):
         else:
             teacher_labels = teacher_probabilities = None
         model.train()
+        optimizer.param_groups[0]['lr'] = scheduled_lr(t)
 
         # 順伝播
         with torch.autocast(device_type='cuda', dtype=amp_dtype, enabled=amp_enabled):
