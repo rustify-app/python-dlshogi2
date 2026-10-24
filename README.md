@@ -142,10 +142,7 @@ python -m pydlshogi2.player.onnx_player
 ./scripts/onnx_player.sh
 ```
 
-> **Note:** the previously shipped `model/model-0000167.onnx` and
-> `model/model-0000225kai.onnx` are *dlshogi-format* models (two-input
-> `input1`/`input2` graph) and are **no longer compatible** with this player.
-> Export your own model from a `.pth` checkpoint as shown above.
+Export a model from a checkpoint produced by your own training run as shown above.
 
 ### USI options
 
