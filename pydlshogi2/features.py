@@ -134,17 +134,19 @@ def make_result(game_result, color):
 def make_eval_winrate(eval_value, color, eval_coef=DEFAULT_EVAL_COEF):
     """Convert a stored centipawn-like evaluation into a side-to-move win rate.
 
-    The evaluation stored in an HCPE record is from **black's perspective**
-    (see ``utils/csa_to_hcpe.py``); it is flipped here when white is to move so
-    the returned probability is always from the perspective of the side to move.
+    The evaluation stored in an HCPE record is already from the **side to
+    move's** perspective: ``utils/csa_to_hcpe.py`` flips black-perspective CSA
+    scores when white is to move, and USI engines (``utils/gen_teacher.py``,
+    self-play) report scores for the side to move. It is used as is.
 
     :param eval_value: the raw ``eval`` field from the HCPE record.
-    :param color: side to move at the position (``cshogi.BLACK`` / ``WHITE``).
+    :param color: side to move at the position. Kept for API compatibility;
+        the stored value needs no flip.
     :param eval_coef: temperature of the sigmoid mapping centipawns to a
         probability.
     :returns: win probability in ``[0, 1]`` for the side to move.
     """
-    eval_stm = eval_value if color == BLACK else -eval_value
+    eval_stm = eval_value
     return 1.0 / (1.0 + math.exp(-eval_stm / eval_coef))
 
 # 対局結果と評価値をブレンドした価値教師を作成
@@ -164,3 +166,57 @@ def make_value_target(game_result, eval_value, color, val_lambda=1.0, eval_coef=
         return z
     p = make_eval_winrate(eval_value, color, eval_coef)
     return val_lambda * z + (1.0 - val_lambda) * p
+
+
+# ---------------------------------------------------------------------------
+# 特徴量セット
+#
+# 'pydlshogi2' はこのリポジトリ独自の入力 (駒配置 + 持ち駒, 104ch) とラベル。
+# 'dlshogi' は本家 dlshogi (WCSC28) 互換の入力 (62ch + 57ch) とラベルで、
+# ONNX に書き出せばふかうら王や dlshogi の C++ エンジンでそのまま使える。
+# ---------------------------------------------------------------------------
+FEATURE_SETS = ('pydlshogi2', 'dlshogi')
+DEFAULT_FEATURE_SET = 'pydlshogi2'
+
+
+def _dlshogi_module():
+    import cshogi.dlshogi as dlshogi
+    return dlshogi
+
+
+def feature_channels(feature_set=DEFAULT_FEATURE_SET):
+    """Number of input planes the network receives for ``feature_set``."""
+    if feature_set == 'pydlshogi2':
+        return FEATURES_NUM
+    if feature_set == 'dlshogi':
+        dlshogi = _dlshogi_module()
+        return dlshogi.FEATURES1_NUM + dlshogi.FEATURES2_NUM
+    raise ValueError('unknown feature set: {}'.format(feature_set))
+
+
+def input_feature_function(feature_set=DEFAULT_FEATURE_SET):
+    """Return ``f(board, out)`` filling ``out`` of shape ``(channels, 9, 9)``.
+
+    ``out`` must be zero-filled by the caller for the 'dlshogi' set as well;
+    both functions only set the planes that are on.
+    """
+    if feature_set == 'pydlshogi2':
+        return make_input_features
+    if feature_set == 'dlshogi':
+        dlshogi = _dlshogi_module()
+        split = dlshogi.FEATURES1_NUM
+
+        def make_dlshogi_features(board, out):
+            out.fill(0)
+            dlshogi.make_input_features(board, out[:split], out[split:])
+        return make_dlshogi_features
+    raise ValueError('unknown feature set: {}'.format(feature_set))
+
+
+def move_label_function(feature_set=DEFAULT_FEATURE_SET):
+    """Return ``f(move, color)`` mapping a full cshogi move to a policy index."""
+    if feature_set == 'pydlshogi2':
+        return make_move_label
+    if feature_set == 'dlshogi':
+        return _dlshogi_module().make_move_label
+    raise ValueError('unknown feature set: {}'.format(feature_set))

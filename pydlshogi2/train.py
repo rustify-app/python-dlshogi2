@@ -9,6 +9,7 @@ import torch.optim as optim
 
 from pydlshogi2.network.policy_value_resnet import build_network, LEGACY_NETWORK_CONFIG
 from pydlshogi2.dataloader import HcpeDataLoader
+from pydlshogi2.features import DEFAULT_FEATURE_SET, FEATURE_SETS
 from pydlshogi2.losses import policy_cross_entropy
 from pydlshogi2.metrics import MetricsWriter, gpu_name
 
@@ -61,6 +62,9 @@ parser.add_argument('--blocks', type=int, default=20, help='number of residual b
 parser.add_argument('--channels', type=int, default=256, help='channel width')
 parser.add_argument('--fcl', type=int, default=256, help='value head fully-connected size')
 parser.add_argument('--no_se', action='store_true', help='disable Squeeze-and-Excitation blocks')
+parser.add_argument('--features', choices=FEATURE_SETS, default=DEFAULT_FEATURE_SET,
+                    help='input feature set; dlshogi is compatible with the dlshogi and '
+                         'FukauraOu C++ engines (export with utils/export_dlshogi_onnx.py)')
 # 高速化オプション
 parser.add_argument('--amp', action='store_true', help='enable bfloat16 autocast (mixed precision)')
 parser.add_argument('--compile', action='store_true', help='wrap the model with torch.compile')
@@ -105,7 +109,9 @@ if args.resume:
 else:
     resume_checkpoint = None
     network_config = {'blocks': args.blocks, 'channels': args.channels,
-                      'fcl': args.fcl, 'se': not args.no_se}
+                      'fcl': args.fcl, 'se': not args.no_se,
+                      'features': args.features}
+feature_set = network_config.get('features', DEFAULT_FEATURE_SET)
 
 # モデル
 model = build_network(network_config)
@@ -147,12 +153,14 @@ train_dataloader = HcpeDataLoader(args.train_data, args.batchsize, device, shuff
                                   teacher_targets=args.teacher_targets,
                                   deduplicate_positions=args.deduplicate_positions,
                                   recency_decay=args.recency_decay,
-                                  mirror_augmentation=args.mirror_augmentation)
+                                  mirror_augmentation=args.mirror_augmentation,
+                                  feature_set=feature_set)
 # テストデータ読み込み
 logging.info('Reading test data')
 test_dataloader = HcpeDataLoader(args.test_data, args.testbatchsize, device,
                                  val_lambda=args.val_lambda, eval_coef=args.eval_coef,
-                                 teacher_targets=args.teacher_targets_test)
+                                 teacher_targets=args.teacher_targets_test,
+                                 feature_set=feature_set)
 
 # 読み込んだデータ数を表示
 logging.info('train position num = {}'.format(len(train_dataloader)))

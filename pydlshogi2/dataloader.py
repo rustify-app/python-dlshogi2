@@ -6,9 +6,9 @@ import torch
 
 from cshogi import Board, HuffmanCodedPosAndEval
 from pydlshogi2.features import (
-    FEATURES_NUM, MOVE_LABELS_NUM, DEFAULT_EVAL_COEF,
-    make_input_features, make_move_label, make_value_target,
-    mirror_move_label,
+    MOVE_LABELS_NUM, DEFAULT_EVAL_COEF, DEFAULT_FEATURE_SET,
+    feature_channels, input_feature_function, move_label_function,
+    make_value_target, mirror_move_label,
 )
 
 
@@ -23,14 +23,23 @@ class HcpeDataLoader:
         uses the outcome only (original behaviour), values below ``1.0`` blend
         in the stored search evaluation (see :func:`pydlshogi2.features.make_value_target`).
     :param eval_coef: sigmoid temperature for the evaluation-to-win-rate mapping.
+    :param feature_set: input features and move labels to produce
+        (``'pydlshogi2'`` or the dlshogi-compatible ``'dlshogi'``).
     """
 
     def __init__(self, files, batch_size, device, shuffle=False,
                  val_lambda=1.0, eval_coef=DEFAULT_EVAL_COEF,
                  teacher_targets=None, deduplicate_positions=False,
-                 recency_decay=1.0, mirror_augmentation=False):
+                 recency_decay=1.0, mirror_augmentation=False,
+                 feature_set=DEFAULT_FEATURE_SET):
         if not 0 < recency_decay <= 1:
             raise ValueError('recency_decay must be greater than 0 and at most 1')
+        if feature_set != 'pydlshogi2' and (mirror_augmentation or teacher_targets):
+            # 左右反転とMultiPV教師はこのリポジトリ独自のラベル配置を前提にしている
+            raise ValueError('mirror augmentation and teacher targets need the pydlshogi2 feature set')
+        self.feature_set = feature_set
+        self.make_features = input_feature_function(feature_set)
+        self.make_label = move_label_function(feature_set)
         self.deduplicate_positions = deduplicate_positions
         self.recency_decay = recency_decay
         self.mirror_augmentation = mirror_augmentation
@@ -46,7 +55,7 @@ class HcpeDataLoader:
 
         # pinned memory はCUDAのみ利用可能
         pin = device.type == 'cuda'
-        self.torch_features = torch.empty((batch_size, FEATURES_NUM, 9, 9), dtype=torch.float32, pin_memory=pin)
+        self.torch_features = torch.empty((batch_size, feature_channels(feature_set), 9, 9), dtype=torch.float32, pin_memory=pin)
         self.torch_move_label = torch.empty((batch_size), dtype=torch.int64, pin_memory=pin)
         self.torch_result = torch.empty((batch_size, 1), dtype=torch.float32, pin_memory=pin)
         if self.teacher_targets is not None:
@@ -138,8 +147,12 @@ class HcpeDataLoader:
             self.teacher_probs.fill(0)
         for i, hcpe in enumerate(hcpevec):
             self.board.set_hcp(hcpe['hcp'])
-            make_input_features(self.board, self.features[i])
-            label = make_move_label(hcpe['bestMove16'], self.board.turn)
+            self.make_features(self.board, self.features[i])
+            if self.feature_set == 'pydlshogi2':
+                label = self.make_label(hcpe['bestMove16'], self.board.turn)
+            else:
+                move = self.board.move_from_move16(hcpe['bestMove16'])
+                label = self.make_label(move, self.board.turn)
             mirrored = self.mirror_augmentation and np.random.random() < 0.5
             if mirrored:
                 self.features[i] = self.features[i, :, ::-1, :]

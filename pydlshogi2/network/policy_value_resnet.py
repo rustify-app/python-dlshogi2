@@ -15,7 +15,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from pydlshogi2.features import FEATURES_NUM, MOVE_PLANES_NUM, MOVE_LABELS_NUM
+from pydlshogi2.features import (
+    DEFAULT_FEATURE_SET, MOVE_PLANES_NUM, MOVE_LABELS_NUM, feature_channels,
+)
 
 #: Architecture defaults for checkpoints that predate embedded config metadata.
 LEGACY_NETWORK_CONFIG = {'blocks': 10, 'channels': 192, 'fcl': 256, 'se': False}
@@ -94,14 +96,17 @@ class PolicyValueNetwork(nn.Module):
     :param channels: channel width of the backbone.
     :param fcl: hidden size of the value head's fully-connected layer.
     :param se: enable Squeeze-and-Excitation in every residual block.
+    :param features: input feature set (see :data:`pydlshogi2.features.FEATURE_SETS`).
     """
 
-    def __init__(self, blocks=20, channels=256, fcl=256, se=True):
+    def __init__(self, blocks=20, channels=256, fcl=256, se=True,
+                 features=DEFAULT_FEATURE_SET):
         super(PolicyValueNetwork, self).__init__()
         # 構成を記録しておき、チェックポイントに埋め込めるようにする
-        self.config = {'blocks': blocks, 'channels': channels, 'fcl': fcl, 'se': se}
+        self.config = {'blocks': blocks, 'channels': channels, 'fcl': fcl, 'se': se,
+                       'features': features}
 
-        self.conv1 = nn.Conv2d(in_channels=FEATURES_NUM, out_channels=channels, kernel_size=3, padding=1, bias=False)
+        self.conv1 = nn.Conv2d(in_channels=feature_channels(features), out_channels=channels, kernel_size=3, padding=1, bias=False)
         self.norm1 = nn.BatchNorm2d(channels)
 
         # resnet blocks

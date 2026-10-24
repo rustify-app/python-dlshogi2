@@ -6,7 +6,7 @@ import math
 import numpy as np
 from cshogi import Board, HuffmanCodedPosAndEval
 
-from pydlshogi2.features import BLACK, make_result
+from pydlshogi2.features import make_result
 
 
 def log_loss(eval_stm, outcomes, coefficient):
@@ -70,8 +70,8 @@ def calibrate(path, max_positions=None, seed=0, exclude_paths=()):
     outcomes = np.empty(len(data), dtype=np.float64)
     for index, record in enumerate(data):
         board.set_hcp(record['hcp'])
-        raw_eval = float(record['eval'])
-        eval_stm[index] = raw_eval if board.turn == BLACK else -raw_eval
+        # HCPE stores the evaluation from the side to move's perspective.
+        eval_stm[index] = float(record['eval'])
         outcomes[index] = make_result(record['gameResult'], board.turn)
     coefficient = fit_eval_coefficient(eval_stm, outcomes)
     return {

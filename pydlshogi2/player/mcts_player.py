@@ -2,7 +2,9 @@
 import torch
 
 from cshogi import Board, BLACK, NOT_REPETITION, REPETITION_DRAW, REPETITION_WIN, REPETITION_SUPERIOR, move_to_usi
-from pydlshogi2.features import FEATURES_NUM, make_input_features, make_move_label
+from pydlshogi2.features import (
+    DEFAULT_FEATURE_SET, feature_channels, input_feature_function, move_label_function,
+)
 from pydlshogi2.uct.uct_node import NodeTree
 from pydlshogi2.network.policy_value_resnet import load_network
 from pydlshogi2.player.base_player import BasePlayer
@@ -222,10 +224,14 @@ class MCTSPlayer(BasePlayer):
         self.model, _ = load_network(self.modelfile, self.device)
         # モデルを評価モードにする
         self.model.eval()
+        # モデルが学習された特徴量セットに合わせる
+        self.feature_set = self.model.config.get('features', DEFAULT_FEATURE_SET)
+        self.make_features = input_feature_function(self.feature_set)
+        self.make_label = move_label_function(self.feature_set)
 
     # 入力特徴量の初期化
     def init_features(self):
-        self.features = torch.empty((self.batch_size, FEATURES_NUM, 9, 9), dtype=torch.float32, pin_memory=(self.gpu_id >= 0))
+        self.features = torch.empty((self.batch_size, feature_channels(self.feature_set), 9, 9), dtype=torch.float32, pin_memory=(self.gpu_id >= 0))
 
     def isready(self):
         # デバイス
@@ -692,7 +698,7 @@ class MCTSPlayer(BasePlayer):
 
     # 入力特徴量の作成
     def make_input_features(self, board):
-        make_input_features(board, self.features.numpy()[self.current_batch_index])
+        self.make_features(board, self.features.numpy()[self.current_batch_index])
 
     # ノードをキューに追加
     def queue_node(self, board, node):
@@ -712,7 +718,7 @@ class MCTSPlayer(BasePlayer):
 
     # 着手を表すラベル作成
     def make_move_label(self, move, color):
-        return make_move_label(move, color)
+        return self.make_label(move, color)
 
     # 局面の評価
     def eval_node(self):
