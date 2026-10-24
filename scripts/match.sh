@@ -51,7 +51,10 @@ echo "metrics    : $METRICS_DIR/match-${EXPERIMENT}-${STAMP}.jsonl"
 echo "log        : $LOG"
 
 if [ "$FOREGROUND" = 1 ]; then
-    exec "$PYTHON" -m pydlshogi2.match "${args[@]}" "$@" 2>&1 | tee "$LOG"
+    # exec only replaces the pipeline subshell, so exit here to avoid starting
+    # the same match again in the background below.
+    "$PYTHON" -m pydlshogi2.match "${args[@]}" "$@" 2>&1 | tee "$LOG"
+    exit "${PIPESTATUS[0]}"
 fi
 
 nohup "$PYTHON" -m pydlshogi2.match "${args[@]}" "$@" > "$LOG" 2>&1 &
