@@ -1,12 +1,16 @@
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 import torch
 from cshogi import Board, BLACK_WIN, HuffmanCodedPosAndEval, move16
 
 from pydlshogi2.dataloader import HcpeDataLoader
+from pydlshogi2.features import (
+    LEFT, RIGHT, UP_LEFT, UP_RIGHT, mirror_move_label,
+)
 
 
 class SelfPlayDataSamplingTest(unittest.TestCase):
@@ -67,6 +71,28 @@ class SelfPlayDataSamplingTest(unittest.TestCase):
         path = self.write_file('data.hcpe', [0])
         with self.assertRaisesRegex(ValueError, 'recency_decay'):
             HcpeDataLoader(path, 1, torch.device('cpu'), recency_decay=0)
+
+    def test_mirror_move_label_reflects_squares_and_directions(self):
+        label = UP_LEFT * 81 + 2 * 9 + 3
+        self.assertEqual(mirror_move_label(label), UP_RIGHT * 81 + 6 * 9 + 3)
+        label = LEFT * 81 + 4 * 9 + 8
+        self.assertEqual(mirror_move_label(label), RIGHT * 81 + 4 * 9 + 8)
+        self.assertEqual(mirror_move_label(mirror_move_label(label)), label)
+
+    def test_mirror_augmentation_transforms_features_and_move_label_together(self):
+        path = self.write_file('data.hcpe', [0])
+        normal = HcpeDataLoader(path, 1, torch.device('cpu'))
+        mirrored = HcpeDataLoader(
+            path, 1, torch.device('cpu'), mirror_augmentation=True)
+        normal_batch = normal.mini_batch(normal.data[:1])
+        with patch('pydlshogi2.dataloader.np.random.random', return_value=0.0):
+            mirrored_batch = mirrored.mini_batch(mirrored.data[:1])
+        self.assertTrue(torch.equal(mirrored_batch[0], normal_batch[0].flip(2)))
+        self.assertEqual(
+            int(mirrored_batch[1][0]),
+            mirror_move_label(int(normal_batch[1][0])))
+        normal.executor.shutdown(wait=True)
+        mirrored.executor.shutdown(wait=True)
 
 
 if __name__ == '__main__':

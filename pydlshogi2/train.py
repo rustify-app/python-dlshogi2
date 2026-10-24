@@ -32,6 +32,8 @@ parser.add_argument('--deduplicate_positions', action='store_true',
                     help='keep only the newest HCPE record for each position')
 parser.add_argument('--recency_decay', type=float, default=1.0,
                     help='per-file sampling weight multiplier for each older input file (0, 1]')
+parser.add_argument('--mirror_augmentation', action='store_true',
+                    help='randomly mirror half of training positions left to right')
 parser.add_argument('--checkpoint', default='checkpoints/checkpoint-{epoch:03}.pth', help='checkpoint file name')
 parser.add_argument('--resume', '-r', default='', help='Resume from snapshot')
 parser.add_argument('--eval_interval', type=int, default=100, help='evaluation interval')
@@ -137,7 +139,8 @@ train_dataloader = HcpeDataLoader(args.train_data, args.batchsize, device, shuff
                                   val_lambda=args.val_lambda, eval_coef=args.eval_coef,
                                   teacher_targets=args.teacher_targets,
                                   deduplicate_positions=args.deduplicate_positions,
-                                  recency_decay=args.recency_decay)
+                                  recency_decay=args.recency_decay,
+                                  mirror_augmentation=args.mirror_augmentation)
 # テストデータ読み込み
 logging.info('Reading test data')
 test_dataloader = HcpeDataLoader(args.test_data, args.testbatchsize, device,
@@ -154,6 +157,7 @@ metrics.event('data_loaded',
               teacher_test_positions=len(test_dataloader.teacher_targets or {}),
               duplicate_positions_removed=train_dataloader.duplicate_positions_removed,
               recency_decay=train_dataloader.recency_decay,
+              mirror_augmentation=train_dataloader.mirror_augmentation,
               network=network_config,
               start_epoch=epoch, start_step=t)
 

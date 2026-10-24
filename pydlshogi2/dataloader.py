@@ -8,6 +8,7 @@ from cshogi import Board, HuffmanCodedPosAndEval
 from pydlshogi2.features import (
     FEATURES_NUM, MOVE_LABELS_NUM, DEFAULT_EVAL_COEF,
     make_input_features, make_move_label, make_value_target,
+    mirror_move_label,
 )
 
 
@@ -27,11 +28,12 @@ class HcpeDataLoader:
     def __init__(self, files, batch_size, device, shuffle=False,
                  val_lambda=1.0, eval_coef=DEFAULT_EVAL_COEF,
                  teacher_targets=None, deduplicate_positions=False,
-                 recency_decay=1.0):
+                 recency_decay=1.0, mirror_augmentation=False):
         if not 0 < recency_decay <= 1:
             raise ValueError('recency_decay must be greater than 0 and at most 1')
         self.deduplicate_positions = deduplicate_positions
         self.recency_decay = recency_decay
+        self.mirror_augmentation = mirror_augmentation
         self.load(files)
         self.batch_size = batch_size
         self.device = device
@@ -138,6 +140,10 @@ class HcpeDataLoader:
             self.board.set_hcp(hcpe['hcp'])
             make_input_features(self.board, self.features[i])
             label = make_move_label(hcpe['bestMove16'], self.board.turn)
+            mirrored = self.mirror_augmentation and np.random.random() < 0.5
+            if mirrored:
+                self.features[i] = self.features[i, :, ::-1, :]
+                label = mirror_move_label(label)
             self.move_label[i] = label
             if self.teacher_targets is not None:
                 target = self.teacher_targets.get(bytes(hcpe['hcp']))
@@ -146,7 +152,12 @@ class HcpeDataLoader:
                     self.teacher_probs[i, 0] = 1.0
                 else:
                     target_labels, target_probs = target
-                    self.teacher_labels[i] = target_labels
+                    if mirrored:
+                        self.teacher_labels[i] = [
+                            mirror_move_label(value) if probability > 0 else 0
+                            for value, probability in zip(target_labels, target_probs)]
+                    else:
+                        self.teacher_labels[i] = target_labels
                     self.teacher_probs[i] = target_probs
             self.result[i] = make_value_target(
                 hcpe['gameResult'], hcpe['eval'], self.board.turn,

@@ -90,6 +90,28 @@ def make_move_label(move, color):
 
     return move_direction * 81 + to_sq
 
+
+def mirror_move_label(label):
+    """Return the policy label for a left-right mirrored position."""
+    direction, square = divmod(int(label), 81)
+    x, y = divmod(square, 9)
+    if direction < len(MOVE_DIRECTION):
+        swaps = {
+            UP_LEFT: UP_RIGHT, UP_RIGHT: UP_LEFT,
+            UP2_LEFT: UP2_RIGHT, UP2_RIGHT: UP2_LEFT,
+            LEFT: RIGHT, RIGHT: LEFT,
+            DOWN_LEFT: DOWN_RIGHT, DOWN_RIGHT: DOWN_LEFT,
+            UP_LEFT_PROMOTE: UP_RIGHT_PROMOTE,
+            UP_RIGHT_PROMOTE: UP_LEFT_PROMOTE,
+            UP2_LEFT_PROMOTE: UP2_RIGHT_PROMOTE,
+            UP2_RIGHT_PROMOTE: UP2_LEFT_PROMOTE,
+            LEFT_PROMOTE: RIGHT_PROMOTE, RIGHT_PROMOTE: LEFT_PROMOTE,
+            DOWN_LEFT_PROMOTE: DOWN_RIGHT_PROMOTE,
+            DOWN_RIGHT_PROMOTE: DOWN_LEFT_PROMOTE,
+        }
+        direction = swaps.get(direction, direction)
+    return direction * 81 + (8 - x) * 9 + y
+
 # 評価値を勝率に変換するデフォルト係数
 # MCTSの評価値変換 (cp = -log(1/p - 1) * 600) と整合する
 DEFAULT_EVAL_COEF = 600.0
