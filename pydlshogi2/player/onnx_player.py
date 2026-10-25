@@ -5,16 +5,19 @@ and swaps only the model loading, feature buffer and inference steps so the
 network runs through :mod:`onnxruntime` instead of PyTorch. Everything else
 (search, time control, USI handling) is inherited unchanged.
 
-The player consumes models exported by :mod:`utils.export_onnx`, which use the
-same single-input feature representation as :mod:`pydlshogi2.features`. This
-keeps the ONNX and PyTorch backends bit-for-bit consistent: a checkpoint
-trained with :mod:`pydlshogi2.train` can be exported and played without any
-feature mismatch.
+The player accepts two model layouts and picks one from the ONNX input names:
+
+* a single ``input`` (:mod:`utils.export_onnx`, the pydlshogi2 feature set)
+* ``input1``/``input2`` (:mod:`utils.export_dlshogi_onnx`, dlshogi WCSC28 planes)
+
+Features and move labels then match the ones the model was trained with.
 """
 import numpy as np
 import onnxruntime
 
-from pydlshogi2.features import FEATURES_NUM, make_input_features
+from pydlshogi2.features import (
+    feature_channels, input_feature_function, move_label_function,
+)
 from pydlshogi2.player.mcts_player import MCTSPlayer
 
 
@@ -55,20 +58,31 @@ class OnnxPlayer(MCTSPlayer):
         else:
             providers = ["CPUExecutionProvider"]
         self.session = onnxruntime.InferenceSession(self.modelfile, providers=providers)
+        input_names = [i.name for i in self.session.get_inputs()]
+        self.feature_set = 'dlshogi' if 'input1' in input_names else 'pydlshogi2'
+        self.make_features = input_feature_function(self.feature_set)
+        self.make_label = move_label_function(self.feature_set)
+        if self.feature_set == 'dlshogi':
+            self.split = self.session.get_inputs()[0].shape[1]
 
     def init_features(self):
-        """Allocate the single-input feature buffer of shape
-        ``(batch_size, FEATURES_NUM, 9, 9)``."""
-        self.features = np.empty((self.batch_size, FEATURES_NUM, 9, 9), dtype=np.float32)
+        """Allocate the feature buffer for the model's feature set."""
+        channels = feature_channels(self.feature_set)
+        self.features = np.empty((self.batch_size, channels, 9, 9), dtype=np.float32)
 
     def make_input_features(self, board):
         """Write ``board`` into the current batch slot of the feature buffer."""
-        make_input_features(board, self.features[self.current_batch_index])
+        self.make_features(board, self.features[self.current_batch_index])
 
     def infer(self):
         """Run inference over the queued positions."""
         x = self.features[0:self.current_batch_index]
-        policy, value = self.session.run(["output_policy", "output_value"], {"input": x})
+        if self.feature_set == 'dlshogi':
+            feeds = {"input1": np.ascontiguousarray(x[:, :self.split]),
+                     "input2": np.ascontiguousarray(x[:, self.split:])}
+        else:
+            feeds = {"input": x}
+        policy, value = self.session.run(["output_policy", "output_value"], feeds)
         return policy, value
 
 
