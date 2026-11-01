@@ -1,0 +1,94 @@
+# Builds the deploy images on GitHub's runners and pushes them to Zot. Images are not built on
+# workstations. Deploying stays a manual step (deploy/README.md):
+#   deploy/set-image-tags.sh && kubectl --context karmada-apiserver apply -k deploy/k8s
+#
+#   zot.lovekapibarasan.org/dlshogi/floodgate:<main short sha>        deploy/docker/floodgate.Dockerfile, context main
+#   zot.lovekapibarasan.org/dlshogi/rl:<feat/native-search short sha> deploy/docker/rl.Dockerfile, context that branch
+#
+# Needs the ZOT_USERNAME and ZOT_PASSWORD repository secrets.
+name: Images
+
+on:
+  push:
+    # A workflow only runs from branches that contain it, so feat/native-search changes are
+    # built from here: run this workflow by hand (Actions > Images > Run workflow).
+    branches: [main]
+    paths: [deploy/docker/**, pydlshogi2/**, requirements.txt, .github/workflows/images.yml]
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "floodgate, rl or both"
+        default: both
+
+permissions:
+  contents: read
+
+concurrency:
+  group: images-${{ github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: zot.lovekapibarasan.org
+  RL_REF: feat/native-search
+
+jobs:
+  floodgate:
+    if: github.ref_name == 'main' && (github.event_name == 'push' || inputs.only != 'rl')
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      # The CUDA devel image and TensorRT need more than the runner's default free disk.
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.ZOT_USERNAME }}
+          password: ${{ secrets.ZOT_PASSWORD }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/floodgate.Dockerfile
+          tags: ${{ env.REGISTRY }}/dlshogi/floodgate:${{ github.sha }}
+          push: true
+          provenance: false
+          sbom: false
+      - run: echo "floodgate ${GITHUB_SHA::7}" >> "$GITHUB_STEP_SUMMARY"
+
+  rl:
+    # The RL code lives on feat/native-search; the Dockerfile and pins live on main.
+    if: github.event_name == 'push' || inputs.only != 'floodgate'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          path: main
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RL_REF }}
+          path: rl
+      - id: tag
+        run: |
+          cp main/deploy/docker/rl-constraints.txt rl/deploy-constraints.txt
+          echo "sha=$(git -C rl rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.ZOT_USERNAME }}
+          password: ${{ secrets.ZOT_PASSWORD }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: rl
+          file: main/deploy/docker/rl.Dockerfile
+          tags: ${{ env.REGISTRY }}/dlshogi/rl:${{ steps.tag.outputs.sha }}
+          push: true
+          provenance: false
+          sbom: false
+      - run: echo "rl ${{ steps.tag.outputs.sha }}" >> "$GITHUB_STEP_SUMMARY"

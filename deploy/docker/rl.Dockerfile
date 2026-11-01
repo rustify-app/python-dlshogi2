@@ -1,6 +1,6 @@
 # Self-play RL loop (rl_loop.sh) with the native UCT core and the TensorRT backend.
 # Build context: a checkout of the branch that has the native search (feat/native-search);
-# deploy/build-images.sh makes that worktree. Versions are pinned to what ran on ubuntu-03.
+# .github/workflows/images.yml checks that branch out as the context. Versions are pinned to what ran on ubuntu-03.
 FROM python:3.14-slim-trixie AS native
 RUN apt-get update && apt-get install -y --no-install-recommends g++ git ca-certificates \
  && rm -rf /var/lib/apt/lists/*

@@ -1,5 +1,5 @@
 # floodgate player: FukauraOu (YaneuraOu's dlshogi-compatible engine, TensorRT) driven by
-# pydlshogi2.csa_client. Build context: a checkout of main. See deploy/README.md.
+# pydlshogi2.csa_client. Built by .github/workflows/images.yml (context: main).
 ARG CUDA=12.9.1
 # TensorRT 10.16.1.11 is what the engine ran with on ubuntu-03 (TRT101601 engine caches).
 ARG TRT=10.16.1.11-1+cuda12.9
