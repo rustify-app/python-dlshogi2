@@ -1,0 +1,31 @@
+# State that must survive the workloads being rewritten or deleted. Kept apart on purpose.
+#   floodgate-data  eval/ (ONNX models + TensorRT engine caches), client.log
+#   rl1-data        rl1/ (WORKDIR: selfplay-*.hcpe, checkpoint-*.pth, PAUSE), checkpoints/,
+#                   openings.txt (gate openings), home/.cache (TensorRT engines)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: floodgate-data
+  namespace: dlshogi
+  labels:
+    app.kubernetes.io/part-of: dlshogi
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn-platform
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rl1-data
+  namespace: dlshogi
+  labels:
+    app.kubernetes.io/part-of: dlshogi
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn-platform
+  resources:
+    requests:
+      storage: 30Gi

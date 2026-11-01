@@ -1,0 +1,54 @@
+# Plays on floodgate with FukauraOu + the r3 model. One login, so exactly one replica.
+# CSA_* come from the Secret floodgate-csa (Infisical Rustify prod /floodgate, see
+# deploy/provision-secrets.py). Uses one of the time-sliced office GPU slots.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: floodgate
+  namespace: dlshogi
+  labels:
+    app.kubernetes.io/name: floodgate
+    app.kubernetes.io/part-of: dlshogi
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: floodgate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: floodgate
+        app.kubernetes.io/part-of: dlshogi
+    spec:
+      runtimeClassName: nvidia
+      terminationGracePeriodSeconds: 60
+      imagePullSecrets:
+        - name: zot-creds
+      containers:
+        - name: floodgate
+          image: floodgate
+          imagePullPolicy: IfNotPresent
+          args:
+            - --option
+            - DNN_Model=r3.onnx
+            - --option
+            - BookFile=no_book
+            - --option
+            - USI_Ponder=false
+            - --log
+            - /data/client.log
+          envFrom:
+            - secretRef:
+                name: floodgate-csa
+          resources:
+            requests: {cpu: 500m, memory: 1Gi}
+            limits: {memory: 4Gi, nvidia.com/gpu: 1}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: floodgate-data

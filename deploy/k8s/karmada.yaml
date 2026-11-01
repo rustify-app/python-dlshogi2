@@ -1,0 +1,27 @@
+# Everything labelled part-of=dlshogi goes to office (the GPU is there). The Secrets
+# floodgate-csa and zot-creds are created in Karmada by deploy/provision-secrets.py.
+apiVersion: policy.karmada.io/v1alpha1
+kind: PropagationPolicy
+metadata:
+  name: dlshogi
+  namespace: dlshogi
+spec:
+  conflictResolution: Overwrite
+  preserveResourcesOnDeletion: true
+  propagateDeps: true
+  resourceSelectors:
+    - apiVersion: apps/v1
+      kind: Deployment
+      labelSelector:
+        matchLabels: {app.kubernetes.io/part-of: dlshogi}
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      labelSelector:
+        matchLabels: {app.kubernetes.io/part-of: dlshogi}
+    - apiVersion: v1
+      kind: Secret
+      labelSelector:
+        matchLabels: {app.kubernetes.io/part-of: dlshogi}
+  placement:
+    clusterAffinity:
+      clusterNames: [office]

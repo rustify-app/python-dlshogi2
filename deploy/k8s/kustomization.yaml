@@ -1,0 +1,17 @@
+# kubectl --context karmada-apiserver apply -f deploy/k8s/bootstrap/namespace.yaml
+# python3 deploy/provision-secrets.py
+# kubectl --context karmada-apiserver apply -k deploy/k8s
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - karmada.yaml
+  - data.yaml
+  - floodgate.yaml
+  - rl1.yaml
+images:
+  - name: floodgate
+    newName: zot.lovekapibarasan.org/dlshogi/floodgate
+    newTag: "unset"
+  - name: dlshogi-rl
+    newName: zot.lovekapibarasan.org/dlshogi/rl
+    newTag: "unset"

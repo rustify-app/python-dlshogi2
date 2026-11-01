@@ -1,0 +1,70 @@
+# Self-play RL from checkpoints/checkpoint.pth (was dlshogi-rl1.service on ubuntu-03).
+# Resumable: rl_loop.sh skips finished iterations in WORKDIR. It parks between iterations
+# while /data/rl1/PAUSE exists:
+#   kubectl --context lovekapibarasan-office -n dlshogi exec deploy/dlshogi-rl1 -- touch /data/rl1/PAUSE
+#   kubectl --context lovekapibarasan-office -n dlshogi exec deploy/dlshogi-rl1 -- rm /data/rl1/PAUSE
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dlshogi-rl1
+  namespace: dlshogi
+  labels:
+    app.kubernetes.io/name: dlshogi-rl1
+    app.kubernetes.io/part-of: dlshogi
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dlshogi-rl1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dlshogi-rl1
+        app.kubernetes.io/part-of: dlshogi
+    spec:
+      runtimeClassName: nvidia
+      terminationGracePeriodSeconds: 120
+      imagePullSecrets:
+        - name: zot-creds
+      containers:
+        - name: rl
+          image: dlshogi-rl
+          imagePullPolicy: IfNotPresent
+          command: [bash, -c]
+          # The PAUSED marker from a previous run is stale; PAUSE (if present) still parks the loop.
+          args:
+            - rm -f /data/rl1/PAUSED && mkdir -p /data/home && exec bash /app/rl_loop.sh /data/checkpoints/checkpoint.pth 2>&1 | tee -a /data/rl1/rl.log
+          env:
+            - {name: GAMES, value: "300"}
+            - {name: ITERATIONS, value: "1000"}
+            - {name: PLAYOUTS, value: "400"}
+            - {name: WORKERS, value: "1"}
+            - {name: WINDOW, value: "15"}
+            - {name: EPOCHS, value: "1"}
+            - {name: BATCHSIZE, value: "1024"}
+            - {name: LR, value: "0.002"}
+            - {name: VAL_LAMBDA, value: "0.5"}
+            - {name: PRUNE_CHECKPOINTS, value: "1"}
+            - {name: GATE_GAMES, value: "40"}
+            - {name: GATE_PLAYOUTS, value: "400"}
+            - {name: GATE_THRESHOLD, value: "0.5"}
+            - {name: SELFPLAY_ARGS, value: "--native --backend tensorrt --max_moves 320"}
+            - {name: TRAIN_ARGS, value: "--amp --amp_dtype float16 --testbatchsize 1024"}
+          resources:
+            requests: {cpu: "1", memory: 2Gi}
+            limits: {memory: 8Gi, nvidia.com/gpu: 1}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: shm
+              mountPath: /dev/shm
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: rl1-data
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi

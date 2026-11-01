@@ -1,0 +1,21 @@
+# Apply once, before the kustomization:
+#   kubectl --context karmada-apiserver apply -f deploy/k8s/bootstrap/namespace.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dlshogi
+---
+apiVersion: policy.karmada.io/v1alpha1
+kind: ClusterPropagationPolicy
+metadata:
+  name: dlshogi-namespace
+spec:
+  resourceSelectors:
+    - apiVersion: v1
+      kind: Namespace
+      name: dlshogi
+  conflictResolution: Overwrite
+  preserveResourcesOnDeletion: true
+  placement:
+    clusterAffinity:
+      clusterNames: [office]
