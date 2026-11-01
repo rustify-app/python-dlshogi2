@@ -8,7 +8,7 @@ FROM nvidia/cuda:${CUDA}-devel-ubuntu24.04 AS engine
 ARG TRT
 ARG YANEURAOU_REF=c1b80ea
 RUN apt-get update && apt-get install -y --no-install-recommends git make clang ca-certificates \
-      libnvinfer10=${TRT} libnvinfer-headers-dev=${TRT} libnvinfer-dev=${TRT} \
+      libnvinfer10=${TRT} libnvinfer-headers-dev=${TRT} libnvinfer-safe-headers-dev=${TRT} libnvinfer-dev=${TRT} \
       libnvonnxparsers10=${TRT} libnvonnxparsers-dev=${TRT} \
  && rm -rf /var/lib/apt/lists/*
 RUN git clone --filter=blob:none https://github.com/yaneurao/YaneuraOu.git /src \
