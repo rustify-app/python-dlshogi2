@@ -60,7 +60,9 @@ jobs:
           file: deploy/docker/floodgate.Dockerfile
           tags: ${{ env.REGISTRY }}/dlshogi/floodgate:${{ github.sha }}
           load: true
-      - run: docker push ${{ env.REGISTRY }}/dlshogi/floodgate:${{ github.sha }}
+      # Zot finalizes big blobs slowly (hash + dedupe on its disk), so a push can fail part-way.
+      # docker push skips layers that are already there, so retrying continues where it stopped.
+      - run: for i in 1 2 3 4 5 6; do docker push ${{ env.REGISTRY }}/dlshogi/floodgate:${{ github.sha }} && exit 0; echo "retry $i"; sleep 30; done; exit 1
       - run: echo "floodgate ${GITHUB_SHA::7}" >> "$GITHUB_STEP_SUMMARY"
 
   rl:
@@ -102,5 +104,7 @@ jobs:
           file: main/deploy/docker/rl.Dockerfile
           tags: ${{ env.REGISTRY }}/dlshogi/rl:${{ steps.tag.outputs.sha }}
           load: true
-      - run: docker push ${{ env.REGISTRY }}/dlshogi/rl:${{ steps.tag.outputs.sha }}
+      # Zot finalizes big blobs slowly (hash + dedupe on its disk), so a push can fail part-way.
+      # docker push skips layers that are already there, so retrying continues where it stopped.
+      - run: for i in 1 2 3 4 5 6; do docker push ${{ env.REGISTRY }}/dlshogi/rl:${{ steps.tag.outputs.sha }} && exit 0; echo "retry $i"; sleep 30; done; exit 1
       - run: echo "rl ${{ steps.tag.outputs.sha }}" >> "$GITHUB_STEP_SUMMARY"
