@@ -1,4 +1,5 @@
 # Plays on floodgate with FukauraOu + the r3 model. One login, so exactly one replica.
+# --ponder: searches the expected reply on the opponent's time (go ponder / ponderhit / stop).
 # CSA_* come from the Secret floodgate-csa (Infisical Rustify prod /floodgate, see
 # deploy/provision-secrets.py). Uses one of the time-sliced office GPU slots.
 #
@@ -38,7 +39,7 @@ spec:
         - name: app
           image: floodgate
           imagePullPolicy: IfNotPresent
-          command: [sh, -c, 'cp -a /dist/. /opt/dlshogi/ && ln -s /data/eval /opt/dlshogi/engine/eval']
+          command: [sh, -c, 'cp -a /dist/. /opt/dlshogi/ && ln -s /data/eval /opt/dlshogi/engine/eval && ln -s /data/book /opt/dlshogi/engine/book']
           volumeMounts:
             - {name: data, mountPath: /data}
             - {name: app, mountPath: /opt/dlshogi}
@@ -58,7 +59,20 @@ spec:
                 touch "$e/.ready"
               fi
               ln -sfn "$h" /data/env/floodgate
+              # Opening book (YaneuraOu new petabook, MIT): fetched once onto the volume.
+              b=/data/book; mkdir -p $b
+              if [ ! -f "$b/.$BOOK_NAME" ]; then
+                echo "fetching book $BOOK_URL"
+                rm -rf /piptmp/book && python -m venv /piptmp/book && /piptmp/book/bin/pip install -q py7zr
+                python -c "import urllib.request,sys; urllib.request.urlretrieve(sys.argv[1], '/piptmp/book.7z')" "$BOOK_URL"
+                /piptmp/book/bin/python -c "import py7zr; py7zr.SevenZipFile('/piptmp/book.7z').extractall('/piptmp/bookx')"
+                rm -f $b/*.db && mv "$(find /piptmp/bookx -name '*.db' | head -1)" $b/user_book1.db
+                rm -rf /piptmp/book /piptmp/book.7z /piptmp/bookx && touch "$b/.$BOOK_NAME"
+              fi
+              ls -la $b
           env:
+            - {name: BOOK_NAME, value: new_petabook_20250505c}
+            - {name: BOOK_URL, value: "https://github.com/yaneurao/YaneuraOu/releases/download/new_petabook233/new_petabook_20250505c.7z"}
             - name: FLOODGATE_PIP
               value: cshogi==1.0.9 tensorrt-cu12-libs==10.16.1.11 nvidia-cuda-runtime-cu12==12.9.79
           resources:
@@ -84,10 +98,23 @@ spec:
             - floodgate
             - --option
             - DNN_Model=r3.onnx
+            # Book settings as recommended in the petabook release notes, except BookEvalDiff:
+            # 20 instead of 0 so floodgate opponents can't simply replay one line against us.
             - --option
-            - BookFile=no_book
+            - BookFile=user_book1.db
             - --option
-            - USI_Ponder=false
+            - BookOnTheFly=true
+            - --option
+            - IgnoreBookPly=true
+            - --option
+            - FlippedBook=true
+            - --option
+            - BookMoves=999
+            - --option
+            - BookDepthLimit=0
+            - --option
+            - BookEvalDiff=20
+            - --ponder
             - --log
             - /data/client.log
           env:
