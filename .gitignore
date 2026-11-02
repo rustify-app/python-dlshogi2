@@ -229,3 +229,4 @@ metrics/
 .claude/
 
 checkpoints/
+model/r4/

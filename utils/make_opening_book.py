@@ -36,7 +36,7 @@ from cshogi import Board, move_to_usi
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pydlshogi2.features import (  # noqa: E402
-    FEATURES_NUM, make_input_features, make_move_label,
+    DEFAULT_FEATURE_SET, feature_channels, input_feature_function, move_label_function,
 )
 from pydlshogi2.network.policy_value_resnet import load_network  # noqa: E402
 
@@ -47,7 +47,7 @@ def policy_probabilities(model, device, board, features, temperature, top_k):
     :param model: the policy-value network in eval mode.
     :param device: torch device the model lives on.
     :param board: position to evaluate.
-    :param features: reusable ``(1, FEATURES_NUM, 9, 9)`` numpy buffer.
+    :param features: reusable ``(1, channels, 9, 9)`` numpy buffer.
     :param temperature: softmax temperature; higher is more uniform.
     :param top_k: keep only this many highest-prior moves (``0`` keeps all).
     :returns: a ``(moves, probabilities)`` tuple, or ``(None, None)`` when the
@@ -57,14 +57,15 @@ def policy_probabilities(model, device, board, features, temperature, top_k):
     if not moves:
         return None, None
 
-    make_input_features(board, features[0])
+    features.fill(0)  # the dlshogi feature function only sets the planes that are on
+    model.make_features(board, features[0])
     with torch.no_grad():
         x = torch.from_numpy(features).to(device)
         policy_logits, _ = model(x)
     logits = policy_logits[0].cpu().numpy()
 
     legal_logits = np.array(
-        [logits[make_move_label(move, board.turn)] for move in moves],
+        [logits[model.make_label(move, board.turn)] for move in moves],
         dtype=np.float64)
 
     if top_k and 0 < top_k < len(moves):
@@ -131,8 +132,12 @@ def main():
     device = torch.device('cuda:{}'.format(args.gpu)) if args.gpu >= 0 else torch.device('cpu')
     model, _ = load_network(args.modelfile, device)
     model.eval()
+    # follow the checkpoint's input feature set (pydlshogi2 or dlshogi)
+    feature_set = model.config.get('features', DEFAULT_FEATURE_SET)
+    model.make_features = input_feature_function(feature_set)
+    model.make_label = move_label_function(feature_set)
 
-    features = np.zeros((1, FEATURES_NUM, 9, 9), dtype=np.float32)
+    features = np.zeros((1, feature_channels(feature_set), 9, 9), dtype=np.float32)
     max_attempts = args.max_attempts or args.lines * 20
 
     # 同じ手順を2度入れても対局が増えないので重複は捨てる
