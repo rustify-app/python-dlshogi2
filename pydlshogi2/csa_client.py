@@ -73,15 +73,19 @@ class UsiEngine:
             if line.startswith(prefix):
                 return line
 
-    def go(self, position, btime, wtime, binc, winc, byoyomi):
-        """Search ``position`` and return ``(bestmove, score_cp, pv)``."""
+    def start(self, position, btime, wtime, binc, winc, byoyomi, ponder=False):
+        """Send ``position`` and a ``go`` (``go ponder`` when ``ponder``) without waiting."""
         self.send(position)
-        command = 'go btime {} wtime {}'.format(btime, wtime)
+        command = 'go ponder' if ponder else 'go'
+        command += ' btime {} wtime {}'.format(btime, wtime)
         if binc or winc:
             command += ' binc {} winc {}'.format(binc, winc)
         if byoyomi:
             command += ' byoyomi {}'.format(byoyomi)
         self.send(command)
+
+    def result(self):
+        """Read until ``bestmove``; return ``(bestmove, ponder_move, score_cp, pv)``."""
         score, pv = None, []
         while True:
             line = self.readline(timeout=3600)
@@ -96,7 +100,24 @@ class UsiEngine:
                         score = -100000 if value.startswith('-') else 100000
                 pv = tokens[tokens.index('pv') + 1:]
             elif line.startswith('bestmove'):
-                return line.split()[1], score, pv
+                tokens = line.split()
+                ponder = tokens[3] if len(tokens) >= 4 and tokens[2] == 'ponder' else None
+                if ponder is None and len(pv) >= 2 and pv[0] == tokens[1]:
+                    ponder = pv[1]
+                return tokens[1], ponder, score, pv
+
+    def go(self, position, btime, wtime, binc, winc, byoyomi):
+        """Search ``position`` and return ``(bestmove, ponder_move, score_cp, pv)``."""
+        self.start(position, btime, wtime, binc, winc, byoyomi)
+        return self.result()
+
+    def ponderhit(self):
+        self.send('ponderhit')
+
+    def stop(self):
+        """Stop a running search and discard its bestmove."""
+        self.send('stop')
+        self.result()
 
     def quit(self):
         try:
@@ -203,8 +224,13 @@ def seconds(fields, key, unit):
     return int(value) * unit if value else 0
 
 
-def play_game(conn, engine, fields, position_lines, eval_comments=True):
-    """Play one accepted game; return the final result line."""
+def play_game(conn, engine, fields, position_lines, eval_comments=True, ponder=False):
+    """Play one accepted game; return the final result line.
+
+    With ``ponder`` the engine keeps searching the expected reply on the
+    opponent's time (``go ponder``), then gets ``ponderhit`` if the opponent
+    plays it, or ``stop`` otherwise.
+    """
     my_sign = fields['Your_Turn']
     unit = 60 if fields.get('Time_Unit', '1sec').endswith('min') else 1
     total = seconds(fields, 'Total_Time', unit)
@@ -222,40 +248,71 @@ def play_game(conn, engine, fields, position_lines, eval_comments=True):
         board.push(move)
         remaining[sign] = remaining[sign] - spent + increment
 
+    def search(moves, ponder_search=False):
+        position = 'position sfen {}{}'.format(
+            start_sfen, (' moves ' + ' '.join(moves)) if moves else '')
+        engine.start(position, max(0, remaining['+']) * 1000, max(0, remaining['-']) * 1000,
+                     increment * 1000, increment * 1000, byoyomi * 1000, ponder=ponder_search)
+
     for sign, csa_move, spent in initial_moves:
         apply(sign, csa_move, spent)
 
     engine.send('usinewgame')
     sign_of_turn = lambda: '+' if board.turn == cshogi.BLACK else '-'  # noqa: E731
-    while True:
-        if sign_of_turn() == my_sign:
-            position = 'position sfen {}{}'.format(
-                start_sfen, (' moves ' + ' '.join(usi_moves)) if usi_moves else '')
-            bestmove, score, pv = engine.go(
-                position, max(0, remaining['+']) * 1000, max(0, remaining['-']) * 1000,
-                increment * 1000, increment * 1000, byoyomi * 1000)
-            if bestmove == 'resign':
-                conn.send('%TORYO')
-            elif bestmove == 'win':
-                conn.send('%KACHI')
-            else:
-                move = board.move_from_usi(bestmove)
-                line = my_sign + move_to_csa(move)
-                if eval_comments and score is not None:
-                    shown = score if my_sign == '+' else -score
-                    line += ",'* {}".format(shown)
-                conn.send(line)
-        # Wait for the server to echo our move, or for the opponent's move.
+    expected = None      # reply we are pondering on, or None
+    hit = False          # the opponent played ``expected``; the search is still running
+    ponder_move = None
+    try:
         while True:
-            line = conn.readline()
-            match = MOVE_LINE.match(line)
-            if match:
-                apply(match.group(1), match.group(2), int(match.group(3) or 0))
-                break
-            if line.startswith(RESULT_LINES):
-                return line
-            if line.startswith('#'):
-                continue  # reason line such as #RESIGN; the result follows
+            if sign_of_turn() == my_sign:
+                if not hit:
+                    search(usi_moves)
+                hit = False
+                bestmove, ponder_move, score, pv = engine.result()
+                if bestmove == 'resign':
+                    conn.send('%TORYO')
+                elif bestmove == 'win':
+                    conn.send('%KACHI')
+                else:
+                    move = board.move_from_usi(bestmove)
+                    line = my_sign + move_to_csa(move)
+                    if eval_comments and score is not None:
+                        shown = score if my_sign == '+' else -score
+                        line += ",'* {}".format(shown)
+                    conn.send(line)
+            # Wait for the server to echo our move, or for the opponent's move.
+            while True:
+                line = conn.readline()
+                match = MOVE_LINE.match(line)
+                if match:
+                    sign = match.group(1)
+                    apply(sign, match.group(2), int(match.group(3) or 0))
+                    if sign == my_sign:
+                        if ponder and ponder_move and _is_legal_usi(board, ponder_move):
+                            expected = ponder_move
+                            search(usi_moves + [expected], ponder_search=True)
+                    elif expected is not None:
+                        if usi_moves[-1] == expected:
+                            engine.ponderhit()
+                            hit = True
+                        else:
+                            engine.stop()
+                        expected = None
+                    break
+                if line.startswith(RESULT_LINES):
+                    return line
+                if line.startswith('#'):
+                    continue  # reason line such as #RESIGN; the result follows
+    finally:
+        if expected is not None or hit:
+            engine.stop()
+
+
+def _is_legal_usi(board, usi):
+    try:
+        return board.is_legal(board.move_from_usi(usi))
+    except Exception:
+        return False
 
 
 def run_once(args, engine):
@@ -276,7 +333,8 @@ def run_once(args, engine):
             if line.startswith('REJECT:'):
                 logging.info('game rejected')
                 return
-        result = play_game(conn, engine, fields, position, args.eval_comments)
+        result = play_game(conn, engine, fields, position, args.eval_comments,
+                           getattr(args, "ponder", False))
         logging.info('game %s finished: %s', game_id, result)
         engine.send('gameover ' + {'#WIN': 'win', '#LOSE': 'lose'}.get(result, 'draw'))
         try:
@@ -305,6 +363,8 @@ def main():
     parser.add_argument('--games', type=int, default=0, help='stop after N games; 0 runs forever')
     parser.add_argument('--no-eval-comments', dest='eval_comments', action='store_false',
                         help="do not send the engine's evaluation as a move comment")
+    parser.add_argument('--ponder', action='store_true',
+                        help="search on the opponent's time (also sets USI_Ponder=true)")
     parser.add_argument('--log', default=None)
     parser.add_argument('--debug', action='store_true')
     args = parser.parse_args()
@@ -315,8 +375,11 @@ def main():
 
     logging.basicConfig(filename=args.log, level=logging.DEBUG if args.debug else logging.INFO,
                         format='%(asctime)s %(levelname)s %(message)s')
+    options = parse_options(args.option)
+    if args.ponder:
+        options['USI_Ponder'] = 'true'
     engine_dir = args.engine_dir or os.path.dirname(os.path.abspath(args.engine))
-    engine = UsiEngine([os.path.abspath(args.engine)], parse_options(args.option), engine_dir)
+    engine = UsiEngine([os.path.abspath(args.engine)], options, engine_dir)
     played = 0
     try:
         while not args.games or played < args.games:
@@ -329,8 +392,7 @@ def main():
             except RuntimeError as exc:
                 logging.error('engine problem: %s; restarting the engine', exc)
                 engine.quit()
-                engine = UsiEngine([os.path.abspath(args.engine)],
-                                   parse_options(args.option), engine_dir)
+                engine = UsiEngine([os.path.abspath(args.engine)], options, engine_dir)
     finally:
         engine.quit()
 
