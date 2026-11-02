@@ -19,7 +19,10 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      # tests/ は標準ライブラリのみで動くので、torch/cshogiを入れずに実行できる
+      # tests/ は cshogi / numpy / torch を使う。torch は CPU 版 (GPU 版は数 GB ある)
+      - name: Install dependencies
+        run: pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
+
       - name: Run tests
         run: python -m unittest discover -s tests -v
 
