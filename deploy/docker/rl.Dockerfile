@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1.7
 # Self-play RL loop (rl_loop.sh) with the native UCT core and the TensorRT backend.
 # Build context: a checkout of the branch that has the native search (feat/native-search);
 # .github/workflows/images.yml checks that branch out as the context.
@@ -17,5 +16,5 @@ COPY pydlshogi2/uct/native /native
 RUN cd /native && sed -i 's/-march=native/-march=broadwell/' build.sh && CSHOGI_SRC=/cshogi-src sh build.sh
 
 FROM busybox:1.37
-COPY --exclude=.git . /dist/app
+COPY . /dist/app
 COPY --from=native /native/libuct.so /dist/app/pydlshogi2/uct/native/libuct.so

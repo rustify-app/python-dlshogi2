@@ -88,6 +88,7 @@ jobs:
       - id: tag
         run: |
           cp main/deploy/docker/rl-constraints.txt rl/deploy-constraints.txt
+          printf '.git\n.github\n' > rl/.dockerignore
           echo "sha=$(git -C rl rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       # Push with the docker daemon, one layer at a time. buildx pushes layers in parallel and
       # gives up when a PUT has no response within ~60s; Zot finalizes (hashes, dedupes) each
