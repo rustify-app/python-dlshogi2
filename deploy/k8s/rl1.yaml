@@ -55,7 +55,7 @@ spec:
               h=$(cat $a/requirements.txt $a/deploy-constraints.txt | sha256sum | cut -c1-16); e=/data/env/$h
               if [ ! -f "$e/.ready" ]; then
                 echo "installing into $e"
-                rm -rf "$e"; mkdir -p /data/env/tmp; export TMPDIR=/data/env/tmp
+                rm -rf "$e"; export TMPDIR=/piptmp
                 python -m venv "$e"; pip="$e/bin/pip install --no-cache-dir -c $a/deploy-constraints.txt"
                 $pip -r $a/requirements.txt
                 "$e/bin/pip" uninstall -y onnxruntime
@@ -69,6 +69,7 @@ spec:
           volumeMounts:
             - {name: data, mountPath: /data}
             - {name: app, mountPath: /opt/dlshogi}
+            - {name: piptmp, mountPath: /piptmp}
       containers:
         - name: rl
           image: docker.io/library/python:3.14-slim-trixie
@@ -120,3 +121,6 @@ spec:
             sizeLimit: 2Gi
         - name: app
           emptyDir: {}
+        # pip's downloads go to node scratch space, not the volume.
+        - name: piptmp
+          emptyDir: {sizeLimit: 12Gi}

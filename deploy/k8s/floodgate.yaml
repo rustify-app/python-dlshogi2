@@ -6,7 +6,7 @@
 #   - app  (init): copies the engine + client from the small zot image dlshogi/floodgate.
 #   - env  (init): installs cshogi and the TensorRT / CUDA runtime wheels from PyPI into
 #     /data/env/<hash of FLOODGATE_PIP> on the volume. Skipped when that venv is already there,
-#     so it downloads (~2.5GB) only the first time and after FLOODGATE_PIP changes.
+#     so it downloads (~4.4GB, mostly tensorrt-cu12-libs) only the first time and after FLOODGATE_PIP changes.
 #   - floodgate: the public python image, running the client from that venv.
 # TensorRT must stay 10.16.1.11: the engine caches in /data/eval are built for it.
 apiVersion: apps/v1
@@ -52,9 +52,9 @@ spec:
               h=$(printf %s "$FLOODGATE_PIP" | sha256sum | cut -c1-16); e=/data/env/$h
               if [ ! -f "$e/.ready" ]; then
                 echo "installing $FLOODGATE_PIP into $e"
-                rm -rf "$e"; mkdir -p /data/env/tmp
+                rm -rf "$e"
                 python -m venv "$e"
-                TMPDIR=/data/env/tmp "$e/bin/pip" install --no-cache-dir --extra-index-url https://pypi.nvidia.com $FLOODGATE_PIP
+                TMPDIR=/piptmp "$e/bin/pip" install --no-cache-dir --extra-index-url https://pypi.nvidia.com $FLOODGATE_PIP
                 touch "$e/.ready"
               fi
               ln -sfn "$h" /data/env/floodgate
@@ -66,6 +66,7 @@ spec:
             limits: {memory: 3Gi}
           volumeMounts:
             - {name: data, mountPath: /data}
+            - {name: piptmp, mountPath: /piptmp}
       containers:
         - name: floodgate
           image: docker.io/library/python:3.14-slim-trixie
@@ -107,3 +108,7 @@ spec:
             claimName: floodgate-data
         - name: app
           emptyDir: {}
+        # pip's downloads (the TensorRT wheel is 4.3GB) go to node scratch space, not the
+        # volume: only the unpacked venv has to fit in floodgate-data.
+        - name: piptmp
+          emptyDir: {sizeLimit: 8Gi}
