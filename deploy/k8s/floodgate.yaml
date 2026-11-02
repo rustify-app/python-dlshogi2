@@ -114,6 +114,10 @@ spec:
             - BookDepthLimit=0
             - --option
             - BookEvalDiff=20
+            # Time: 85 instead of 100. Games that leave the book early used to run down to ~10s of base
+            # time by ply 100 and play the rest on the 10s increment (wiki 改善案, 2026-11-02).
+            - --option
+            - SlowMover=85
             - --ponder
             - --log
             - /data/client.log
