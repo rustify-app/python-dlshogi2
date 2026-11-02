@@ -30,7 +30,13 @@ for file_list, f in zip([file_list_train, file_list_test], [f_train, f_test]):
     kif_num = 0
     position_num = 0
     for filepath in file_list:
-        for kif in CSA.Parser.parse_file(filepath):
+        # floodgate の古い棋譜には UTF-8 でないものがある。1 ファイルで止めない
+        try:
+            kifs = CSA.Parser.parse_file(filepath)
+        except Exception:
+            print(f'unreadable {filepath}')
+            continue
+        for kif in kifs:
             # 投了、千日手、宣言勝ちで終了した棋譜以外を除外
             if kif.endgame not in ('%TORYO', '%SENNICHITE', '%KACHI'):
                 continue
