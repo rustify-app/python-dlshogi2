@@ -1,6 +1,14 @@
 # Plays on floodgate with FukauraOu + the r3 model. One login, so exactly one replica.
 # CSA_* come from the Secret floodgate-csa (Infisical Rustify prod /floodgate, see
 # deploy/provision-secrets.py). Uses one of the time-sliced office GPU slots.
+#
+# Nothing large goes through Zot:
+#   - app  (init): copies the engine + client from the small zot image dlshogi/floodgate.
+#   - env  (init): installs cshogi and the TensorRT / CUDA runtime wheels from PyPI into
+#     /data/env/<hash of FLOODGATE_PIP> on the volume. Skipped when that venv is already there,
+#     so it downloads (~2.5GB) only the first time and after FLOODGATE_PIP changes.
+#   - floodgate: the public python image, running the client from that venv.
+# TensorRT must stay 10.16.1.11: the engine caches in /data/eval are built for it.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -26,11 +34,53 @@ spec:
       terminationGracePeriodSeconds: 60
       imagePullSecrets:
         - name: zot-creds
-      containers:
-        - name: floodgate
+      initContainers:
+        - name: app
           image: floodgate
           imagePullPolicy: IfNotPresent
+          command: [sh, -c, 'cp -a /dist/. /opt/dlshogi/ && ln -s /data/eval /opt/dlshogi/engine/eval']
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: app, mountPath: /opt/dlshogi}
+        - name: env
+          image: docker.io/library/python:3.14-slim-trixie
+          imagePullPolicy: IfNotPresent
+          command: [bash, -c]
           args:
+            - |
+              set -euo pipefail
+              h=$(printf %s "$FLOODGATE_PIP" | sha256sum | cut -c1-16); e=/data/env/$h
+              if [ ! -f "$e/.ready" ]; then
+                echo "installing $FLOODGATE_PIP into $e"
+                rm -rf "$e"; mkdir -p /data/env/tmp
+                python -m venv "$e"
+                TMPDIR=/data/env/tmp "$e/bin/pip" install --no-cache-dir --extra-index-url https://pypi.nvidia.com $FLOODGATE_PIP
+                touch "$e/.ready"
+              fi
+              ln -sfn "$h" /data/env/floodgate
+          env:
+            - name: FLOODGATE_PIP
+              value: cshogi==1.0.9 tensorrt-cu12-libs==10.16.1.11 nvidia-cuda-runtime-cu12==12.9.79
+          resources:
+            requests: {cpu: 500m, memory: 512Mi}
+            limits: {memory: 3Gi}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+      containers:
+        - name: floodgate
+          image: docker.io/library/python:3.14-slim-trixie
+          imagePullPolicy: IfNotPresent
+          command: [bash, -c]
+          args:
+            - |
+              set -euo pipefail
+              v=/data/env/floodgate; sp=$(echo $v/lib/python3.*/site-packages)
+              export LD_LIBRARY_PATH=/opt/dlshogi/lib:$sp/tensorrt_libs:$sp/nvidia/cuda_runtime/lib
+              if ldd /opt/dlshogi/engine/FukauraOu | grep 'not found'; then exit 1; fi
+              cd /opt/dlshogi/app
+              exec $v/bin/python -m pydlshogi2.csa_client --engine /opt/dlshogi/engine/FukauraOu \
+                --engine-dir /opt/dlshogi/engine "$@"
+            - floodgate
             - --option
             - DNN_Model=r3.onnx
             - --option
@@ -39,6 +89,9 @@ spec:
             - USI_Ponder=false
             - --log
             - /data/client.log
+          env:
+            - {name: PYTHONUNBUFFERED, value: "1"}
+            - {name: PYTHONPATH, value: /opt/dlshogi/app}
           envFrom:
             - secretRef:
                 name: floodgate-csa
@@ -46,9 +99,11 @@ spec:
             requests: {cpu: 500m, memory: 1Gi}
             limits: {memory: 4Gi, nvidia.com/gpu: 1}
           volumeMounts:
-            - name: data
-              mountPath: /data
+            - {name: data, mountPath: /data}
+            - {name: app, mountPath: /opt/dlshogi}
       volumes:
         - name: data
           persistentVolumeClaim:
             claimName: floodgate-data
+        - name: app
+          emptyDir: {}

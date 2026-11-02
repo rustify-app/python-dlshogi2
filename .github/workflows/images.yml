@@ -5,6 +5,10 @@
 #   zot.lovekapibarasan.org/dlshogi/floodgate:<main short sha>        deploy/docker/floodgate.Dockerfile, context main
 #   zot.lovekapibarasan.org/dlshogi/rl:<feat/native-search short sha> deploy/docker/rl.Dockerfile, context that branch
 #
+# The images are small (busybox + the engine binary / code). CUDA, TensorRT and torch are not
+# in them: the Pods install those from PyPI into a venv on their volume (deploy/k8s). Pushing
+# multi-GB layers to Zot took hours (its blob finalize is slow on the office disks).
+#
 # Needs the ZOT_USERNAME and ZOT_PASSWORD repository secrets.
 name: Images
 

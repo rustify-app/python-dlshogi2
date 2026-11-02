@@ -1,7 +1,7 @@
 # State that must survive the workloads being rewritten or deleted. Kept apart on purpose.
-#   floodgate-data  eval/ (ONNX models + TensorRT engine caches), client.log
+#   floodgate-data  eval/ (ONNX models + TensorRT engine caches), client.log, env/ (venv)
 #   rl1-data        rl1/ (WORKDIR: selfplay-*.hcpe, checkpoint-*.pth, PAUSE), checkpoints/,
-#                   openings.txt (gate openings), home/.cache (TensorRT engines)
+#                   openings.txt (gate openings), home/.cache (TensorRT engines), env/ (venv)
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -14,7 +14,7 @@ spec:
   storageClassName: longhorn-platform
   resources:
     requests:
-      storage: 5Gi
+      storage: 10Gi
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

@@ -1,7 +1,17 @@
+# syntax=docker/dockerfile:1.7
 # floodgate player: FukauraOu (YaneuraOu's dlshogi-compatible engine, TensorRT) driven by
 # pydlshogi2.csa_client. Built by .github/workflows/images.yml (context: main).
+#
+# This image only carries what we build: the engine binary, the few C++ runtime libraries it
+# needs, and the client code (tens of MB). CUDA, TensorRT and Python come from elsewhere so
+# nothing large goes through Zot (deploy/k8s/floodgate.yaml):
+#   - the Pod runs on the public python image,
+#   - an init container installs cshogi + the TensorRT / CUDA runtime wheels from PyPI into a
+#     venv on the data volume (once per version set),
+#   - another init container copies /dist from this image into the Pod.
 ARG CUDA=12.9.1
 # TensorRT 10.16.1.11 is what the engine ran with on ubuntu-03 (TRT101601 engine caches).
+# The runtime side is the matching wheel tensorrt-cu12-libs==10.16.1.11.
 ARG TRT=10.16.1.11-1+cuda12.9
 
 FROM nvidia/cuda:${CUDA}-devel-ubuntu24.04 AS engine
@@ -14,21 +24,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends git make clang 
 RUN git clone --filter=blob:none https://github.com/yaneurao/YaneuraOu.git /src \
  && git -C /src checkout ${YANEURAOU_REF}
 WORKDIR /src/source
-# AVX2 matches the office nodes (Xeon E5 v4).
+# AVX2 matches the office nodes.
 RUN make -j"$(nproc)" tournament YANEURAOU_EDITION=YANEURAOU_ENGINE_DEEP_TENSOR_RT_UBUNTU \
       TARGET_CPU=AVX2 COMPILER=clang++ \
- && install -m 0755 YaneuraOu-by-gcc /FukauraOu
+ && install -D -m 0755 YaneuraOu-by-gcc /dist/engine/FukauraOu
+# Bundle the engine's libraries the Pod's python image (Debian trixie) lacks, e.g. libgomp.
+# glibc, libstdc++ and libgcc_s are already there (apt needs them); the NVIDIA ones come from
+# the wheels and the driver.
+RUN mkdir -p /dist/lib \
+ && ldd /dist/engine/FukauraOu | awk '/=> \//{print $1, $3}' \
+  | grep -vE '^(libc|libm|libdl|libpthread|librt|libstdc\+\+|libgcc_s|ld-linux[^ ]*)\.so|^lib(nvinfer|nvonnxparser|cudart|cuda|cublas)' \
+  | while read -r name path; do cp -L "$path" "/dist/lib/$name"; done \
+ && ls -la /dist/lib
 
-FROM nvidia/cuda:${CUDA}-runtime-ubuntu24.04
-ARG TRT
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      libnvinfer10=${TRT} libnvonnxparsers10=${TRT} libgomp1 python3 python3-venv \
- && rm -rf /var/lib/apt/lists/*
-RUN python3 -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir cshogi==1.0.9
-COPY --from=engine /FukauraOu /engine/FukauraOu
-# The models and TensorRT engine caches live on the volume (FukauraOu reads ./eval/<DNN_Model>).
-RUN ln -s /data/eval /engine/eval
-COPY pydlshogi2 /app/pydlshogi2
-ENV PATH=/opt/venv/bin:$PATH PYTHONPATH=/app PYTHONUNBUFFERED=1
-WORKDIR /app
-ENTRYPOINT ["python", "-m", "pydlshogi2.csa_client", "--engine", "/engine/FukauraOu", "--engine-dir", "/engine"]
+FROM busybox:1.37
+COPY --from=engine /dist /dist
+COPY pydlshogi2 /dist/app/pydlshogi2

@@ -3,6 +3,15 @@
 # while /data/rl1/PAUSE exists:
 #   kubectl --context lovekapibarasan-office -n dlshogi exec deploy/dlshogi-rl1 -- touch /data/rl1/PAUSE
 #   kubectl --context lovekapibarasan-office -n dlshogi exec deploy/dlshogi-rl1 -- rm /data/rl1/PAUSE
+#
+# Nothing large goes through Zot:
+#   - app  (init): copies the code + native core from the small zot image dlshogi/rl.
+#   - env  (init): installs requirements.txt (pinned by deploy-constraints.txt, what ran on
+#     ubuntu-03) + onnxruntime-gpu + tensorrt_cu13 from PyPI into /data/env/<hash of those
+#     files> on the volume. Skipped when that venv is already there, so the ~8GB download
+#     happens only the first time and when the pins change.
+#   - rl: the public python image, running rl_loop.sh with that venv.
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -28,15 +37,54 @@ spec:
       terminationGracePeriodSeconds: 120
       imagePullSecrets:
         - name: zot-creds
+      initContainers:
+        - name: app
+          image: dlshogi-rl
+          imagePullPolicy: IfNotPresent
+          command: [sh, -c, 'cp -a /dist/. /opt/dlshogi/']
+          volumeMounts:
+            - {name: app, mountPath: /opt/dlshogi}
+        - name: env
+          image: docker.io/library/python:3.14-slim-trixie
+          imagePullPolicy: IfNotPresent
+          command: [bash, -c]
+          args:
+            - |
+              set -euo pipefail
+              a=/opt/dlshogi/app
+              h=$(cat $a/requirements.txt $a/deploy-constraints.txt | sha256sum | cut -c1-16); e=/data/env/$h
+              if [ ! -f "$e/.ready" ]; then
+                echo "installing into $e"
+                rm -rf "$e"; mkdir -p /data/env/tmp; export TMPDIR=/data/env/tmp
+                python -m venv "$e"; pip="$e/bin/pip install --no-cache-dir -c $a/deploy-constraints.txt"
+                $pip -r $a/requirements.txt
+                "$e/bin/pip" uninstall -y onnxruntime
+                $pip onnxruntime-gpu tensorrt_cu13
+                touch "$e/.ready"
+              fi
+              ln -sfn "$h" /data/env/rl
+          resources:
+            requests: {cpu: 500m, memory: 1Gi}
+            limits: {memory: 4Gi}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: app, mountPath: /opt/dlshogi}
       containers:
         - name: rl
-          image: dlshogi-rl
+          image: docker.io/library/python:3.14-slim-trixie
           imagePullPolicy: IfNotPresent
           command: [bash, -c]
           # The PAUSED marker from a previous run is stale; PAUSE (if present) still parks the loop.
           args:
-            - rm -f /data/rl1/PAUSED && mkdir -p /data/home && exec bash /app/rl_loop.sh /data/checkpoints/checkpoint.pth 2>&1 | tee -a /data/rl1/rl.log
+            - rm -f /data/rl1/PAUSED && mkdir -p /data/home && cd /opt/dlshogi/app && exec bash rl_loop.sh /data/checkpoints/checkpoint.pth 2>&1 | tee -a /data/rl1/rl.log
           env:
+            - {name: PATH, value: /data/env/rl/bin:/usr/local/bin:/usr/bin:/bin}
+            - {name: PYTHONPATH, value: /opt/dlshogi/app}
+            - {name: PYTHONUNBUFFERED, value: "1"}
+            - {name: PYTHON, value: python}
+            - {name: HOME, value: /data/home}
+            - {name: WORKDIR, value: /data/rl1}
+            - {name: GATE_OPENING, value: /data/openings.txt}
             - {name: GAMES, value: "300"}
             - {name: ITERATIONS, value: "1000"}
             - {name: PLAYOUTS, value: "400"}
@@ -58,6 +106,8 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
+            - name: app
+              mountPath: /opt/dlshogi
             - name: shm
               mountPath: /dev/shm
       volumes:
@@ -68,3 +118,5 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 2Gi
+        - name: app
+          emptyDir: {}
