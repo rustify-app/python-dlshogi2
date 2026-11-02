@@ -11,7 +11,7 @@ resources:
 images:
   - name: floodgate
     newName: zot.lovekapibarasan.org/dlshogi/floodgate
-    newTag: "unset"
+    newTag: "7f69b3d01a848873d084473017921e0110edfb9a"
   - name: dlshogi-rl
     newName: zot.lovekapibarasan.org/dlshogi/rl
-    newTag: "unset"
+    newTag: "314905deea498487b9f334505a3ade7ff45aed23"
