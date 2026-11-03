@@ -5,6 +5,8 @@
 
   floodgate-csa  CSA_HOST / CSA_PORT / CSA_USER / CSA_PASSWORD for pydlshogi2.csa_client, from
                  Infisical Rustify prod /floodgate (FLOODGATE_*), read with INFISICAL_RUSTIFY_*.
+  floodgate-nnue-csa  the same for rustify_nnue (rustify-app/rustify-nnue): FLOODGATE_HOST/PORT
+                 plus FLOODGATE_NNUE_USER / FLOODGATE_NNUE_PASSWORD.
   zot-creds      image pull secret for zot, from the self-hosted Infisical "Development
                  Environment Variables" dev /general (ZOT_*), read with INFISICAL_LOVEKAPIBARASAN_*.
 
@@ -66,14 +68,16 @@ def main():
 
     fg = fetch("RUSTIFY", RUSTIFY_PROJECT, "prod", "/floodgate")
     csa = {f"CSA_{k}": fg[f"FLOODGATE_{k}"] for k in ("HOST", "PORT", "USER", "PASSWORD")}
+    nnue = {**csa, "CSA_USER": fg["FLOODGATE_NNUE_USER"], "CSA_PASSWORD": fg["FLOODGATE_NNUE_PASSWORD"]}
     dev = fetch("LOVEKAPIBARASAN", DEV_ENV_PROJECT, "dev", "/general")
     registry = urllib.parse.urlparse(dev["ZOT_ENDPOINT"]).netloc or dev["ZOT_ENDPOINT"]
     auth = base64.b64encode(f"{dev['ZOT_USERNAME']}:{dev['ZOT_PASSWORD']}".encode()).decode()
-    print(f"floodgate-csa: {', '.join(sorted(csa))}\nzot-creds: registry {registry}")
+    print(f"floodgate-csa: {', '.join(sorted(csa))}\nfloodgate-nnue-csa: {', '.join(sorted(nnue))}\nzot-creds: registry {registry}")
     if args.dry_run:
         return 0
     items = {"apiVersion": "v1", "kind": "List", "items": [
         secret("floodgate-csa", csa),
+        secret("floodgate-nnue-csa", nnue),
         secret("zot-creds", {".dockerconfigjson": json.dumps({"auths": {registry: {"auth": auth}}})},
                "kubernetes.io/dockerconfigjson")]}
     return subprocess.run(["kubectl", "--context", CONTEXT, "apply", "-f", "-"],
