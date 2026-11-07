@@ -118,6 +118,10 @@ spec:
             # time by ply 100 and play the rest on the 10s increment (wiki 改善案, 2026-11-02).
             - --option
             - SlowMover=85
+            # 5M instead of the default 10M nodes: a long ponder+think grew the tree past the 4Gi
+            # limit and the engine was OOM-killed (2026-11-04, then ~150 forfeits until restarted).
+            - --option
+            - UCT_NodeLimit=5000000
             - --ponder
             - --log
             - /data/client.log
@@ -128,8 +132,8 @@ spec:
             - secretRef:
                 name: floodgate-csa
           resources:
-            requests: {cpu: 500m, memory: 1Gi}
-            limits: {memory: 4Gi, nvidia.com/gpu: 1}
+            requests: {cpu: 500m, memory: 2Gi}
+            limits: {memory: 6Gi, nvidia.com/gpu: 1}
           volumeMounts:
             - {name: data, mountPath: /data}
             - {name: app, mountPath: /opt/dlshogi}

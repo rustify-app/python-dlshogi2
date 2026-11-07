@@ -54,10 +54,19 @@ class UsiEngine:
             self.lines.put(line.rstrip('\n'))
         self.lines.put(None)
 
+    def alive(self):
+        return self.process.poll() is None
+
     def send(self, command):
         logging.debug('usi> %s', command)
-        self.process.stdin.write(command + '\n')
-        self.process.stdin.flush()
+        try:
+            self.process.stdin.write(command + '\n')
+            self.process.stdin.flush()
+        except OSError as exc:
+            # A dead engine shows up as BrokenPipeError, an OSError. Raise RuntimeError so
+            # main() restarts the engine instead of treating it as a network problem.
+            raise RuntimeError('USI engine exited (code {}): {}'.format(
+                self.process.poll(), exc)) from exc
 
     def readline(self, timeout):
         line = self.lines.get(timeout=timeout)
@@ -384,6 +393,8 @@ def main():
     try:
         while not args.games or played < args.games:
             try:
+                if not engine.alive():
+                    raise RuntimeError('USI engine exited (code {})'.format(engine.process.poll()))
                 run_once(args, engine)
                 played += 1
             except (OSError, ConnectionError) as exc:

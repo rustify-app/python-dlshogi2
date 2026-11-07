@@ -208,6 +208,21 @@ class CsaClientTest(unittest.TestCase):
                                 'go ponder', 'stop'])                 # move 3, game over
         self.assertEqual(len(conn.sent), 3)
 
+    def test_dead_engine_is_an_engine_problem(self):
+        """A crashed engine must raise RuntimeError (restart it), not OSError (just reconnect)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            script = os.path.join(tmp, 'engine.py')
+            with open(script, 'w') as f:
+                f.write(FAKE_ENGINE)
+            engine = csa_client.UsiEngine([sys.executable, script], {}, tmp)
+            engine.process.kill()
+            engine.process.wait()
+            self.assertFalse(engine.alive())
+            with self.assertRaises(RuntimeError):
+                for _ in range(100):  # the first writes may still fit in the pipe buffer
+                    engine.send('isready')
+            engine.quit()
+
     def test_parse_position_with_moves(self):
         sfen, moves = csa_client.parse_position(['PI', '+', '+7776FU,T3', '-3334FU,T5'])
         self.assertTrue(sfen.startswith('lnsgkgsnl/1r5b1/ppppppppp'))
